@@ -5,6 +5,7 @@
   - 密码以 UTF-8 字节计不得超过 72（bcrypt 算法限制，schema 层前置校验）
   - access / refresh 双令牌，以 payload.type 区分，防止 refresh 冒充 access
 """
+
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta

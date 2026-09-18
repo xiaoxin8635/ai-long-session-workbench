@@ -1,4 +1,5 @@
 """会话相关 schema（docs/06 §M-03）。"""
+
 import uuid
 from datetime import datetime
 

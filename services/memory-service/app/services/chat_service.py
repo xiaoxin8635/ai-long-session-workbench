@@ -6,6 +6,7 @@ LLM 流式生成 → 持久化回答 + 回写窗口 → SSE 透传。
 M3 阶段此编排将升级为 LangGraph 图（retrieve→assemble→generate→tools），
 当前保持直通以保证 Open WebUI 先跑通完整对话。
 """
+
 import logging
 import uuid
 from collections.abc import AsyncIterator
@@ -52,9 +53,7 @@ class ChatService:
             if session is None:
                 raise NotFoundError("会话不存在")
             return session.id
-        first_user = next(
-            (m.content for m in payload.messages if m.role == "user"), "新会话"
-        )
+        first_user = next((m.content for m in payload.messages if m.role == "user"), "新会话")
         created = await _session_service.create(
             db, ws_id=ws_id, user=user, title=first_user[:_TITLE_MAX]
         )

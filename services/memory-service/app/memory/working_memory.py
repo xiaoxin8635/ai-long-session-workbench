@@ -6,6 +6,7 @@
   - 整链 7 天 TTL（会话级自愈；DB 中的消息是持久真相源，Redis 仅是热窗口）
   - window() 从最新往旧累计 token，超出预算截断（Context Builder 的取数入口）
 """
+
 import json
 import logging
 import uuid
@@ -35,9 +36,7 @@ class WorkingMemory:
         """会话对应的 Redis key。"""
         return f"{_KEY_PREFIX}{session_id}"
 
-    async def append(
-        self, session_id: uuid.UUID, *, role: str, content: str
-    ) -> None:
+    async def append(self, session_id: uuid.UUID, *, role: str, content: str) -> None:
         """追加一条消息到窗口尾部（含 token 计数与时间戳）。"""
         entry: dict[str, Any] = {
             "role": role,
@@ -52,9 +51,7 @@ class WorkingMemory:
             pipe.expire(key, _TTL_SECONDS)
             await pipe.execute()
 
-    async def window(
-        self, session_id: uuid.UUID, max_tokens: int
-    ) -> list[dict[str, Any]]:
+    async def window(self, session_id: uuid.UUID, max_tokens: int) -> list[dict[str, Any]]:
         """取 token 预算内的消息窗口（时间正序返回）。
 
         从最新往旧累计，超预算即截断；始终至少保留最新一条（预算极小时

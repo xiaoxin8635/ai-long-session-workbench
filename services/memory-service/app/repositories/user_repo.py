@@ -1,4 +1,5 @@
 """用户仓储（数据访问出口，禁止服务层直接写查询）。"""
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 

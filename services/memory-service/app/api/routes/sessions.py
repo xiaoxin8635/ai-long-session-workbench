@@ -3,6 +3,7 @@
 workspace 归属经 query 参数 workspace_id 传递，由
 CurrentWorkspaceQuery 依赖完成成员校验（隔离第二道防线）。
 """
+
 import uuid
 from typing import Annotated
 
@@ -66,9 +67,7 @@ async def create_session(
 
 
 @router.get("/{session_id}", response_model=SessionDetail, summary="会话详情")
-async def get_session(
-    session_id: uuid.UUID, ws: CurrentWorkspaceQuery, db: DbDep
-) -> SessionDetail:
+async def get_session(session_id: uuid.UUID, ws: CurrentWorkspaceQuery, db: DbDep) -> SessionDetail:
     """会话详情（含首页消息；完整历史走 messages 子端点）。"""
     return await _service.get_detail(db, ws_id=ws.id, session_id=session_id)
 
@@ -98,14 +97,10 @@ async def delete_session(
     session_id: uuid.UUID,
     ws: CurrentWorkspaceQuery,
     db: DbDep,
-    cascade_memories: Annotated[
-        bool, Query(description="true 时同步归档该会话来源的记忆")
-    ] = False,
+    cascade_memories: Annotated[bool, Query(description="true 时同步归档该会话来源的记忆")] = False,
 ) -> None:
     """软删除；cascade_memories=True 时同步归档来源记忆。"""
-    await _service.delete(
-        db, ws_id=ws.id, session_id=session_id, cascade_memories=cascade_memories
-    )
+    await _service.delete(db, ws_id=ws.id, session_id=session_id, cascade_memories=cascade_memories)
 
 
 @router.get(
@@ -140,6 +135,4 @@ async def append_message(
     db: DbDep,
 ) -> MessageRead:
     """追加消息：token 计数、metadata 落库、版本冲突返回 409。"""
-    return await _service.append_message(
-        db, ws_id=ws.id, session_id=session_id, payload=payload
-    )
+    return await _service.append_message(db, ws_id=ws.id, session_id=session_id, payload=payload)

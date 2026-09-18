@@ -1,4 +1,5 @@
 """message 仓储（append-only：无更新/删除端点，只有插入与查询）。"""
+
 import uuid
 
 from sqlalchemy import func, select

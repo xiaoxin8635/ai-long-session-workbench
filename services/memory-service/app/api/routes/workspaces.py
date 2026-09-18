@@ -3,6 +3,7 @@
 所有端点经由 deps.get_workspace / require_role 完成第二道防线校验；
 成员管理（查看/添加）要求 ADMIN 及以上。
 """
+
 import uuid
 
 from fastapi import APIRouter, Depends, status
@@ -23,8 +24,7 @@ _admin_member = Depends(require_role(MemberRole.ADMIN))
 async def list_my_workspaces(user: CurrentUser, db: DbDep) -> list[WorkspaceRead]:
     """返回当前用户所属的全部 workspace（前端切换器数据源）。"""
     return [
-        WorkspaceRead.model_validate(ws)
-        for ws in await workspace_repo.list_for_user(db, user.id)
+        WorkspaceRead.model_validate(ws) for ws in await workspace_repo.list_for_user(db, user.id)
     ]
 
 
@@ -81,9 +81,7 @@ async def add_member(
     target = await user_repo.get_by_username(db, payload.username)
     if target is None:
         raise NotFoundError("目标用户不存在")
-    member = await workspace_repo.add_member(
-        db, ws_id=ws_id, user_id=target.id, role=payload.role
-    )
+    member = await workspace_repo.add_member(db, ws_id=ws_id, user_id=target.id, role=payload.role)
     return MemberRead(
         workspace_id=member.workspace_id,
         user_id=target.id,

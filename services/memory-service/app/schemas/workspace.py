@@ -1,4 +1,5 @@
 """workspace 相关 schema（docs/06 §M-02）。"""
+
 import uuid
 from datetime import datetime
 

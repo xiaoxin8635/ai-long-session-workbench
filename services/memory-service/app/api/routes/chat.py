@@ -7,6 +7,7 @@
   - 非流式：标准 chat.completion JSON
   - LLM 未配置 → 503；上游失败 → 502（流开始后以 error 事件收尾）
 """
+
 import json
 import logging
 import time
@@ -58,9 +59,7 @@ async def chat_completions(payload: ChatCompletionRequest, user: CurrentUser, db
     service = ChatService(llm, WorkingMemory(get_redis()))
 
     # ---- 会话解析 + 用户消息落库（任何响应模式前完成）----
-    session_id = await service.resolve_session(
-        db, ws_id=ws_id, user=user, payload=payload
-    )
+    session_id = await service.resolve_session(db, ws_id=ws_id, user=user, payload=payload)
     await service.prepare(db, ws_id=ws_id, session_id=session_id, payload=payload)
 
     completion_id = f"chatcmpl-{uuid_mod.uuid4().hex}"
@@ -74,31 +73,36 @@ async def chat_completions(payload: ChatCompletionRequest, user: CurrentUser, db
             )
         except LLMError as exc:
             raise AppError("llm_upstream_error", 502, str(exc)) from exc
-        return _non_stream_response(completion_id, created, answer)
+        return _non_stream_response(completion_id, created, answer, session_id)
 
     # ---- 流式（SSE）----
     async def event_stream() -> AsyncIterator[str]:
         answer_parts: list[str] = []
+        first_chunk = True
         try:
             async for delta_text in service.stream_answer(
                 db, ws_id=ws_id, session_id=session_id, payload=payload
             ):
                 answer_parts.append(delta_text)
-                yield _sse(
-                    {
-                        "id": completion_id,
-                        "object": "chat.completion.chunk",
-                        "created": created,
-                        "model": "echodesk",
-                        "choices": [{"index": 0, "delta": {"content": delta_text}}],
-                    }
-                )
+                chunk: dict = {
+                    "id": completion_id,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": "echodesk",
+                    "choices": [{"index": 0, "delta": {"content": delta_text}}],
+                }
+                # 首片携带 session_id，客户端凭它延续多轮会话
+                if first_chunk:
+                    chunk["metadata"] = {"session_id": str(session_id)}
+                    first_chunk = False
+                yield _sse(chunk)
             yield _sse(
                 {
                     "id": completion_id,
                     "object": "chat.completion.chunk",
                     "created": created,
                     "model": "echodesk",
+                    "metadata": {"session_id": str(session_id)},
                     "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
                     "usage": {
                         "completion_tokens": count_tokens("".join(answer_parts)),
@@ -114,13 +118,14 @@ async def chat_completions(payload: ChatCompletionRequest, user: CurrentUser, db
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
-def _non_stream_response(completion_id: str, created: int, answer: str) -> dict:
-    """构造非流式 OpenAI 响应体。"""
+def _non_stream_response(completion_id: str, created: int, answer: str, session_id: str) -> dict:
+    """构造非流式 OpenAI 响应体（metadata.session_id 供客户端延续会话）。"""
     return {
         "id": completion_id,
         "object": "chat.completion",
         "created": created,
         "model": "echodesk",
+        "metadata": {"session_id": str(session_id)},
         "choices": [
             {
                 "index": 0,

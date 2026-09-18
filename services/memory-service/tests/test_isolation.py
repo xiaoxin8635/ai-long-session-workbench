@@ -25,9 +25,7 @@ async def _register_and_login(client: AsyncClient, username: str) -> dict:
         json={"username": username, "password": _PASSWORD, "display_name": username.title()},
     )
     assert resp.status_code == 201, resp.text
-    resp = await client.post(
-        "/api/auth/login", json={"username": username, "password": _PASSWORD}
-    )
+    resp = await client.post("/api/auth/login", json={"username": username, "password": _PASSWORD})
     assert resp.status_code == 200, resp.text
     return resp.json()
 
@@ -59,9 +57,7 @@ async def test_user_cannot_access_others_workspace(client: AsyncClient) -> None:
     bob_ws = (await _my_workspaces(client, bob))[0]
 
     headers = {"Authorization": f"Bearer {alice['access_token']}"}
-    assert (
-        await client.get(f"/api/workspaces/{bob_ws['id']}", headers=headers)
-    ).status_code == 403
+    assert (await client.get(f"/api/workspaces/{bob_ws['id']}", headers=headers)).status_code == 403
     assert (
         await client.get(f"/api/workspaces/{bob_ws['id']}/members", headers=headers)
     ).status_code == 403
@@ -86,9 +82,7 @@ async def test_workspace_list_only_shows_own(client: AsyncClient) -> None:
 
 async def _login_again(client: AsyncClient, username: str) -> dict:
     """重复登录辅助（隔离测试内复用）。"""
-    resp = await client.post(
-        "/api/auth/login", json={"username": username, "password": _PASSWORD}
-    )
+    resp = await client.post("/api/auth/login", json={"username": username, "password": _PASSWORD})
     assert resp.status_code == 200, resp.text
     return resp.json()
 
@@ -103,9 +97,7 @@ async def test_missing_token_401(client: AsyncClient) -> None:
 
 async def test_garbage_token_401(client: AsyncClient) -> None:
     """伪造令牌 → 401。"""
-    resp = await client.get(
-        "/api/workspaces", headers={"Authorization": "Bearer not-a-jwt"}
-    )
+    resp = await client.get("/api/workspaces", headers={"Authorization": "Bearer not-a-jwt"})
     assert resp.status_code == 401
 
 
@@ -118,9 +110,7 @@ async def test_expired_token_401(client: AsyncClient) -> None:
     )
     user_id = me.json()["id"]
     expired = _expired_access_token(user_id)
-    resp = await client.get(
-        "/api/workspaces", headers={"Authorization": f"Bearer {expired}"}
-    )
+    resp = await client.get("/api/workspaces", headers={"Authorization": f"Bearer {expired}"})
     assert resp.status_code == 401
 
 
@@ -146,9 +136,7 @@ async def test_member_role_blocked_on_admin_endpoints(client: AsyncClient) -> No
     member_headers = {"Authorization": f"Bearer {member['access_token']}"}
 
     # MEMBER：可见详情（成员资格通过）但成员管理被拒（RBAC）
-    assert (
-        await client.get(f"/api/workspaces/{ws_id}", headers=member_headers)
-    ).status_code == 200
+    assert (await client.get(f"/api/workspaces/{ws_id}", headers=member_headers)).status_code == 200
     assert (
         await client.get(f"/api/workspaces/{ws_id}/members", headers=member_headers)
     ).status_code == 403

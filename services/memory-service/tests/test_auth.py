@@ -52,9 +52,7 @@ async def test_register_validation_errors(client: AsyncClient) -> None:
         "/api/auth/register", json={"username": "非法用户", "password": "passw0rd123"}
     )
     assert resp.status_code == 422
-    resp = await client.post(
-        "/api/auth/register", json={"username": "carol", "password": "short"}
-    )
+    resp = await client.post("/api/auth/register", json={"username": "carol", "password": "short"})
     assert resp.status_code == 422
 
 

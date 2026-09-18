@@ -52,12 +52,8 @@ def chat_client(
 
 async def _auth_setup(client: AsyncClient, username: str) -> tuple[dict, dict]:
     """注册登录并取个人 workspace，返回 (headers, ws)。"""
-    await client.post(
-        "/api/auth/register", json={"username": username, "password": _PASSWORD}
-    )
-    resp = await client.post(
-        "/api/auth/login", json={"username": username, "password": _PASSWORD}
-    )
+    await client.post("/api/auth/register", json={"username": username, "password": _PASSWORD})
+    resp = await client.post("/api/auth/login", json={"username": username, "password": _PASSWORD})
     headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
     ws = (await client.get("/api/workspaces", headers=headers)).json()[0]
     return headers, ws
@@ -92,6 +88,10 @@ async def test_stream_chat_persists_roundtrip(chat_client: AsyncClient, fake_llm
     assert "".join(deltas) == fake_llm.reply
     assert payloads[-1]["choices"][0]["finish_reason"] == "stop"
 
+    # 首片与 finish 片均回传 metadata.session_id（客户端凭它延续会话）
+    replied_sid = payloads[0]["metadata"]["session_id"]
+    assert replied_sid == payloads[-1]["metadata"]["session_id"]
+
     # 会话自动创建（标题取首条用户消息）且两条消息落库
     sessions = (
         await chat_client.get(f"/api/sessions?workspace_id={ws['id']}", headers=headers)
@@ -99,6 +99,7 @@ async def test_stream_chat_persists_roundtrip(chat_client: AsyncClient, fake_llm
     assert sessions["total"] == 1
     assert sessions["items"][0]["title"] == "你好"
     sid = sessions["items"][0]["id"]
+    assert sid == replied_sid
     messages = (
         await chat_client.get(
             f"/api/sessions/{sid}/messages?workspace_id={ws['id']}", headers=headers
@@ -123,21 +124,25 @@ async def test_non_stream_chat_returns_openai_json(chat_client: AsyncClient) -> 
     assert data["choices"][0]["message"]["role"] == "assistant"
     assert data["choices"][0]["finish_reason"] == "stop"
     assert data["usage"]["completion_tokens"] > 0
+    # 非流式同样回传 metadata.session_id
+    assert data["metadata"]["session_id"]
 
 
 async def test_multi_turn_working_memory_context(
     chat_client: AsyncClient, fake_llm: FakeLLM
 ) -> None:
-    """多轮：第二轮 LLM 收到的上下文含首轮 user+assistant（Working Memory 生效）。"""
+    """多轮：第二轮 LLM 收到的上下文含首轮 user+assistant（Working Memory 生效）。
+
+    session_id 取自第一轮响应的 metadata（真实客户端行为，无列表反查后门）。
+    """
     headers, ws = await _auth_setup(chat_client, "chat_multi")
     first = await chat_client.post(
         "/v1/chat/completions", headers=headers, json=_body(ws["id"], "第一轮问题")
     )
     assert first.status_code == 200
-    sessions = (
-        await chat_client.get(f"/api/sessions?workspace_id={ws['id']}", headers=headers)
-    ).json()
-    sid = sessions["items"][0]["id"]
+    lines = [ln for ln in first.text.splitlines() if ln.startswith("data: ")]
+    payloads = [json.loads(ln[len("data: ") :]) for ln in lines[:-1]]
+    sid = payloads[0]["metadata"]["session_id"]
 
     second = await chat_client.post(
         "/v1/chat/completions",
@@ -172,14 +177,13 @@ async def test_chat_auth_and_isolation(chat_client: AsyncClient) -> None:
 
 async def test_llm_not_configured_503(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """LLM 未配置：503 problem+json（不 500）。"""
+
     def _raise() -> Any:
         raise LLMNotConfigured("LLM 未配置")
 
     monkeypatch.setattr("app.api.routes.chat.get_llm_client", _raise)
     headers, ws = await _auth_setup(client, "chat_unconf")
-    resp = await client.post(
-        "/v1/chat/completions", headers=headers, json=_body(ws["id"], "x")
-    )
+    resp = await client.post("/v1/chat/completions", headers=headers, json=_body(ws["id"], "x"))
     assert resp.status_code == 503
     assert resp.json()["status"] == 503
 
@@ -191,9 +195,7 @@ async def test_llm_stream_error_degrades_gracefully(
     failing = FakeLLM(fail=True)
     monkeypatch.setattr("app.api.routes.chat.get_llm_client", lambda: failing)
     headers, ws = await _auth_setup(client, "chat_fail")
-    resp = await client.post(
-        "/v1/chat/completions", headers=headers, json=_body(ws["id"], "x")
-    )
+    resp = await client.post("/v1/chat/completions", headers=headers, json=_body(ws["id"], "x"))
     assert resp.status_code == 200
     assert '"error"' in resp.text
     assert "[DONE]" in resp.text

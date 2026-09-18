@@ -7,6 +7,7 @@
   - 降级：上游不可用抛 LLMError（502），未配置抛 LLMNotConfigured（503），
     均由调用方决定是否继续（回答链路直接透传给前端）
 """
+
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -51,9 +52,7 @@ class LLMClient:
         self._api_key = api_key
         self._model = model
 
-    async def _post(
-        self, payload: dict[str, Any]
-    ) -> httpx.Response:
+    async def _post(self, payload: dict[str, Any]) -> httpx.Response:
         """带重试的 POST（仅对 5xx/网络错误重试；4xx 不重试）。"""
         settings = get_settings()
         url = f"{self._base_url}/chat/completions"
@@ -100,9 +99,7 @@ class LLMClient:
         except (KeyError, IndexError, ValueError, json.JSONDecodeError) as exc:
             raise LLMError(f"上游响应格式异常: {exc}") from exc
 
-    async def stream_chat(
-        self, messages: list[dict[str, str]]
-    ) -> AsyncIterator[str]:
+    async def stream_chat(self, messages: list[dict[str, str]]) -> AsyncIterator[str]:
         """流式补全：逐段产出 delta 文本。
 
         Yields:
@@ -124,9 +121,7 @@ class LLMClient:
         for attempt in range(settings.llm_max_retries + 1):
             try:
                 async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds) as client:
-                    async with client.stream(
-                        "POST", url, headers=headers, json=payload
-                    ) as resp:
+                    async with client.stream("POST", url, headers=headers, json=payload) as resp:
                         if resp.status_code != 200:
                             body = (await resp.aread()).decode("utf-8", "replace")
                             raise LLMError(f"上游 {resp.status_code}: {body[:200]}")

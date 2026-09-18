@@ -3,6 +3,7 @@
 数据流：POST message → 会话锁 → token 计数 → INSERT → 原子更新
 sessions.last_message_at/token_total/version → 版本冲突转 409。
 """
+
 import asyncio
 import time
 import uuid
@@ -124,9 +125,7 @@ class SessionService:
         )
         return [SessionRead.model_validate(s) for s in sessions], total
 
-    async def get(
-        self, db: AsyncSession, *, ws_id: uuid.UUID, session_id: uuid.UUID
-    ) -> Session:
+    async def get(self, db: AsyncSession, *, ws_id: uuid.UUID, session_id: uuid.UUID) -> Session:
         """取会话（含已归档；不存在/跨 workspace → 404）。"""
         session = await session_repo.get_by_id(db, workspace_id=ws_id, session_id=session_id)
         if session is None or session.status == SessionStatus.DELETED:
@@ -179,9 +178,7 @@ class SessionService:
         session = await self.get(db, ws_id=ws_id, session_id=session_id)
         archived = 0
         if cascade_memories:
-            archived = await memory_repo.archive_by_source_session(
-                db, session_id=session.id
-            )
+            archived = await memory_repo.archive_by_source_session(db, session_id=session.id)
         await session_repo.soft_delete(db, session)
         return archived
 

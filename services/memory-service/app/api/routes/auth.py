@@ -3,6 +3,7 @@
 注册为单事务：用户 → 个人 workspace → owner 成员关系，三者原子生效；
 登录失败统一 401（防用户枚举）。
 """
+
 from fastapi import APIRouter, status
 from sqlalchemy.exc import IntegrityError
 
@@ -50,9 +51,7 @@ async def register(payload: UserCreate, db: DbDep) -> UserRead:
         ws = await workspace_repo.create(
             db, name=f"{payload.display_name or payload.username} 的空间", owner_id=user.id
         )
-        await workspace_repo.add_member(
-            db, ws_id=ws.id, user_id=user.id, role=MemberRole.OWNER
-        )
+        await workspace_repo.add_member(db, ws_id=ws.id, user_id=user.id, role=MemberRole.OWNER)
     except IntegrityError as exc:  # 并发注册同名用户
         raise ConflictError("用户名已被占用") from exc
     return UserRead.model_validate(user)

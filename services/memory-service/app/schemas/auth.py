@@ -1,4 +1,5 @@
 """认证相关 schema（docs/06 §M-02 / §2.4 命名约定）。"""
+
 import uuid
 from datetime import datetime
 

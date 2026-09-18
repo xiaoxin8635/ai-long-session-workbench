@@ -36,8 +36,14 @@ async def _create_session(client: AsyncClient, headers: dict, ws_id: str, title=
     return resp.json()
 
 
-async def _append(client: AsyncClient, headers: dict, ws_id: str, sid: str, content: str,
-                  expected_version: int | None = None) -> object:
+async def _append(
+    client: AsyncClient,
+    headers: dict,
+    ws_id: str,
+    sid: str,
+    content: str,
+    expected_version: int | None = None,
+) -> object:
     """追加消息辅助（返回 httpx.Response）。"""
     body = {"role": "user", "content": content}
     if expected_version is not None:
@@ -62,14 +68,16 @@ async def test_session_crud_lifecycle(client: AsyncClient) -> None:
     # 重命名
     resp = await client.patch(
         f"/api/sessions/{created['id']}?workspace_id={ws['id']}",
-        headers=headers, json={"title": "需求评审"},
+        headers=headers,
+        json={"title": "需求评审"},
     )
     assert resp.status_code == 200 and resp.json()["title"] == "需求评审"
 
     # 归档后默认列表不可见，include_archived=True 可见
     resp = await client.patch(
         f"/api/sessions/{created['id']}?workspace_id={ws['id']}",
-        headers=headers, json={"status": "archived"},
+        headers=headers,
+        json={"status": "archived"},
     )
     assert resp.status_code == 200 and resp.json()["status"] == "archived"
     visible = (await client.get(f"/api/sessions?workspace_id={ws['id']}", headers=headers)).json()
@@ -84,7 +92,8 @@ async def test_session_crud_lifecycle(client: AsyncClient) -> None:
     # 恢复 → 再软删除（404 于列表与详情）
     await client.patch(
         f"/api/sessions/{created['id']}?workspace_id={ws['id']}",
-        headers=headers, json={"status": "active"},
+        headers=headers,
+        json={"status": "active"},
     )
     resp = await client.delete(
         f"/api/sessions/{created['id']}?workspace_id={ws['id']}", headers=headers
@@ -103,28 +112,20 @@ async def test_session_list_pagination_and_keyword(client: AsyncClient) -> None:
         await _create_session(client, headers, ws["id"], title=f"会话-{i:02d}")
 
     page1 = (
-        await client.get(
-            f"/api/sessions?workspace_id={ws['id']}&limit=2&offset=0", headers=headers
-        )
+        await client.get(f"/api/sessions?workspace_id={ws['id']}&limit=2&offset=0", headers=headers)
     ).json()
     assert page1["total"] == 5 and len(page1["items"]) == 2
     page3 = (
-        await client.get(
-            f"/api/sessions?workspace_id={ws['id']}&limit=2&offset=4", headers=headers
-        )
+        await client.get(f"/api/sessions?workspace_id={ws['id']}&limit=2&offset=4", headers=headers)
     ).json()
     assert len(page3["items"]) == 1
 
     hit = (
-        await client.get(
-            f"/api/sessions?workspace_id={ws['id']}&q=会话-03", headers=headers
-        )
+        await client.get(f"/api/sessions?workspace_id={ws['id']}&q=会话-03", headers=headers)
     ).json()
     assert hit["total"] == 1 and hit["items"][0]["title"] == "会话-03"
     miss = (
-        await client.get(
-            f"/api/sessions?workspace_id={ws['id']}&q=不存在", headers=headers
-        )
+        await client.get(f"/api/sessions?workspace_id={ws['id']}&q=不存在", headers=headers)
     ).json()
     assert miss["total"] == 0
 
@@ -138,7 +139,11 @@ async def test_append_message_updates_counters_and_metadata(client: AsyncClient)
     session = await _create_session(client, headers, ws["id"], title="统计")
 
     resp = await _append(
-        client, headers, ws["id"], session["id"], "你好，世界",
+        client,
+        headers,
+        ws["id"],
+        session["id"],
+        "你好，世界",
         expected_version=1,
     )
     assert resp.status_code == 201, resp.text
@@ -147,7 +152,11 @@ async def test_append_message_updates_counters_and_metadata(client: AsyncClient)
     assert body["metadata"] == {}
 
     resp = await _append(
-        client, headers, ws["id"], session["id"], "hello world from test",
+        client,
+        headers,
+        ws["id"],
+        session["id"],
+        "hello world from test",
         expected_version=2,
     )
     assert resp.status_code == 201
@@ -161,9 +170,7 @@ async def test_append_message_updates_counters_and_metadata(client: AsyncClient)
     assert [m["content"][:5] for m in messages["items"]] == ["你好，世界", "hello"]
 
     detail = (
-        await client.get(
-            f"/api/sessions/{session['id']}?workspace_id={ws['id']}", headers=headers
-        )
+        await client.get(f"/api/sessions/{session['id']}?workspace_id={ws['id']}", headers=headers)
     ).json()
     assert detail["version"] == 3
     assert detail["last_message_at"] is not None
@@ -177,7 +184,8 @@ async def test_append_to_archived_session_409(client: AsyncClient) -> None:
     session = await _create_session(client, headers, ws["id"])
     await client.patch(
         f"/api/sessions/{session['id']}?workspace_id={ws['id']}",
-        headers=headers, json={"status": "archived"},
+        headers=headers,
+        json={"status": "archived"},
     )
     resp = await _append(client, headers, ws["id"], session["id"], "late message")
     assert resp.status_code == 409
@@ -190,14 +198,10 @@ async def test_expected_version_conflict_409(client: AsyncClient) -> None:
     """客户端持有的 expected_version 过期时返回 409。"""
     headers, ws = await _setup_user_with_ws(client, "lock_user")
     session = await _create_session(client, headers, ws["id"])
-    resp = await _append(
-        client, headers, ws["id"], session["id"], "first", expected_version=1
-    )
+    resp = await _append(client, headers, ws["id"], session["id"], "first", expected_version=1)
     assert resp.status_code == 201
     # 会话 version 已是 2，仍用过期的 1 → 409
-    resp = await _append(
-        client, headers, ws["id"], session["id"], "second", expected_version=1
-    )
+    resp = await _append(client, headers, ws["id"], session["id"], "second", expected_version=1)
     assert resp.status_code == 409
 
 
@@ -221,9 +225,7 @@ async def test_ten_concurrent_appends_no_loss(client: AsyncClient) -> None:
     ).json()
     assert messages["total"] == 10  # 无丢失
     detail = (
-        await client.get(
-            f"/api/sessions/{session['id']}?workspace_id={ws['id']}", headers=headers
-        )
+        await client.get(f"/api/sessions/{session['id']}?workspace_id={ws['id']}", headers=headers)
     ).json()
     assert detail["version"] == 11  # 10 次前移
     assert detail["token_total"] == sum(m["token_count"] for m in messages["items"])
@@ -264,9 +266,8 @@ async def test_delete_with_cascade_archives_memories(client: AsyncClient) -> Non
 
     async with factory() as db:
         memory = (
-            (await db.execute(select(Memory).where(Memory.key == "cascade-check")))
-            .scalar_one()
-        )
+            await db.execute(select(Memory).where(Memory.key == "cascade-check"))
+        ).scalar_one()
         assert memory.status == MemoryStatus.ARCHIVED
 
 

@@ -1,4 +1,5 @@
 """session 仓储（隔离第一道防线：所有查询强制 workspace_id 过滤）。"""
+
 import uuid
 
 from sqlalchemy import func, select, update
@@ -24,9 +25,7 @@ async def get_by_id(
 ) -> Session | None:
     """按主键取会话（强制 workspace 归属，跨 workspace 访问视同不存在）。"""
     result = await db.execute(
-        select(Session).where(
-            Session.id == session_id, Session.workspace_id == workspace_id
-        )
+        select(Session).where(Session.id == session_id, Session.workspace_id == workspace_id)
     )
     return result.scalar_one_or_none()
 
@@ -51,9 +50,7 @@ async def list_paginated(
     if keyword:
         conditions.append(Session.title.ilike(f"%{keyword}%"))
 
-    total = await db.scalar(
-        select(func.count()).select_from(Session).where(*conditions)
-    )
+    total = await db.scalar(select(func.count()).select_from(Session).where(*conditions))
     rows = await db.execute(
         select(Session)
         .where(*conditions)

@@ -5,6 +5,7 @@
   第二道（本模块 get_workspace / require_role 成员与角色校验）→ 路由声明使用
   第三道（向量库按 workspace 分区）→ M-04/M-07 实现
 """
+
 import uuid
 from collections.abc import AsyncIterator, Callable
 from typing import Annotated
