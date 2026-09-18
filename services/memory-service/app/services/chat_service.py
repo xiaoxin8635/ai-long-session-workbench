@@ -1,21 +1,24 @@
-"""Chat 服务：M1 直通编排（docs/06 §M-08）。
+"""Chat 服务：M1 直通编排（docs/06 §M-08 + M-04 后台抽取）。
 
 流程：解析/创建会话 → 持久化用户消息 → Working Memory 取窗口 + 滚动摘要
-→ LLM 流式生成 → 持久化回答 + 回写窗口 → 触发滚动摘要压缩（M-06）。
+→ LLM 流式生成 → 持久化回答 + 回写窗口 → 触发滚动摘要压缩（M-06）
+→ 后台派发记忆抽取任务（M-04，不阻塞响应）。
 
 M3 阶段此编排将升级为 LangGraph 图（retrieve→assemble→generate→tools），
 当前保持直通以保证 Open WebUI 先跑通完整对话。
 """
 
+import asyncio
 import logging
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.errors import NotFoundError
 from app.llm.client import LLMClient
+from app.memory.pipeline import extract_pipeline
 from app.memory.working_memory import WorkingMemory
 from app.models.user import User
 from app.repositories import session_repo
@@ -33,6 +36,25 @@ _TITLE_MAX = 30
 
 _session_service = SessionService()
 
+# 后台抽取任务引用池：防止 asyncio.create_task 的任务被 GC 中途取消
+_background_tasks: set[asyncio.Task[object]] = set()
+
+
+def _spawn_extraction(
+    ws_id: uuid.UUID,
+    user_id: uuid.UUID,
+    session_id: uuid.UUID,
+    messages: Sequence[tuple[uuid.UUID, str, str]],
+) -> None:
+    """派发后台记忆抽取任务（fire-and-forget，管线内部吞异常）。"""
+    task = asyncio.create_task(
+        extract_pipeline(
+            ws_id=ws_id, user_id=user_id, session_id=session_id, messages=list(messages)
+        )
+    )
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
 
 class ChatService:
     """chat/completions 用例编排（流式与非流式共用取上下文与落库逻辑）。"""
@@ -42,17 +64,21 @@ class ChatService:
         llm: LLMClient,
         working_memory: WorkingMemory,
         summarizer: RollingSummarizer | None = None,
+        extract_hook: Callable[..., Awaitable[object]] | None = _spawn_extraction,
     ) -> None:
-        """注入 LLM 客户端、Working Memory 与滚动摘要器（均可替换为 fake）。
+        """注入 LLM 客户端、Working Memory、滚动摘要器与抽取派发钩子。
 
         Args:
             llm: 对话 LLM 客户端。
             working_memory: Working Memory 窗口。
             summarizer: 滚动摘要器；None 时用 llm+working_memory 默认构造。
+            extract_hook: 每轮回答后的记忆抽取派发函数（签名同 _spawn_extraction）；
+                None 禁用（测试隔离用）。
         """
         self._llm = llm
         self._wm = working_memory
         self._summarizer = summarizer or RollingSummarizer(llm, working_memory)
+        self._extract_hook = extract_hook
 
     async def resolve_session(
         self, db: AsyncSession, *, ws_id: uuid.UUID, user: User, payload: ChatCompletionRequest
@@ -80,16 +106,21 @@ class ChatService:
         ws_id: uuid.UUID,
         session_id: uuid.UUID,
         payload: ChatCompletionRequest,
-    ) -> None:
-        """持久化本轮用户消息并回写 Working Memory（生成前执行）。"""
+    ) -> uuid.UUID:
+        """持久化本轮用户消息并回写 Working Memory（生成前执行）。
+
+        Returns:
+            用户消息的数据库 ID（供记忆抽取的 source_message_ids）。
+        """
         user_msg = payload.messages[-1]
-        await _session_service.append_message(
+        message = await _session_service.append_message(
             db,
             ws_id=ws_id,
             session_id=session_id,
             payload=MessageCreate(role=user_msg.role, content=user_msg.content),
         )
         await self._wm.append(session_id, role=user_msg.role, content=user_msg.content)
+        return message.id
 
     async def context_messages(
         self, db: AsyncSession, *, ws_id: uuid.UUID, session_id: uuid.UUID
@@ -109,13 +140,31 @@ class ChatService:
         return messages
 
     async def finalize(
-        self, db: AsyncSession, *, ws_id: uuid.UUID, session_id: uuid.UUID, answer: str
+        self,
+        db: AsyncSession,
+        *,
+        ws_id: uuid.UUID,
+        user_id: uuid.UUID,
+        session_id: uuid.UUID,
+        answer: str,
+        user_msg_id: uuid.UUID,
+        user_content: str,
     ) -> None:
-        """持久化回答并回写 Working Memory，随后触发滚动摘要压缩。
+        """持久化回答并回写 Working Memory，随后触发压缩与后台抽取。
 
-        压缩在 maybe_compress 内部自持会话锁并吞异常，失败不影响对话。
+        压缩在 maybe_compress 内部自持会话锁并吞异常；抽取为后台任务
+        fire-and-forget —— 两者失败均不影响对话。
+
+        Args:
+            db: 数据库会话。
+            ws_id: 所属 workspace。
+            user_id: 归属用户（记忆条目归属）。
+            session_id: 会话。
+            answer: 完整回答文本。
+            user_msg_id: 本轮用户消息的数据库 ID（prepare 的返回值）。
+            user_content: 本轮用户消息正文（抽取管线的输入）。
         """
-        await _session_service.append_message(
+        message = await _session_service.append_message(
             db,
             ws_id=ws_id,
             session_id=session_id,
@@ -123,33 +172,63 @@ class ChatService:
         )
         await self._wm.append(session_id, role="assistant", content=answer)
         await self._summarizer.maybe_compress(db, ws_id=ws_id, session_id=session_id)
+        if self._extract_hook is not None:
+            self._extract_hook(
+                ws_id,
+                user_id,
+                session_id,
+                [
+                    (user_msg_id, "user", user_content),
+                    (message.id, "assistant", answer),
+                ],
+            )
 
     async def stream_answer(
         self,
         db: AsyncSession,
         *,
         ws_id: uuid.UUID,
+        user_id: uuid.UUID,
         session_id: uuid.UUID,
         payload: ChatCompletionRequest,
+        user_msg_id: uuid.UUID,
     ) -> AsyncIterator[str]:
-        """流式生成并逐段产出文本；结束后统一落库并触发压缩。"""
+        """流式生成并逐段产出文本；结束后统一落库并触发压缩/抽取。"""
         messages = await self.context_messages(db, ws_id=ws_id, session_id=session_id)
         chunks: list[str] = []
         async for delta in self._llm.stream_chat(messages):
             chunks.append(delta)
             yield delta
-        await self.finalize(db, ws_id=ws_id, session_id=session_id, answer="".join(chunks))
+        await self.finalize(
+            db,
+            ws_id=ws_id,
+            user_id=user_id,
+            session_id=session_id,
+            answer="".join(chunks),
+            user_msg_id=user_msg_id,
+            user_content=payload.messages[-1].content,
+        )
 
     async def complete_answer(
         self,
         db: AsyncSession,
         *,
         ws_id: uuid.UUID,
+        user_id: uuid.UUID,
         session_id: uuid.UUID,
         payload: ChatCompletionRequest,
+        user_msg_id: uuid.UUID,
     ) -> str:
         """非流式生成；返回完整回答（落库在内部完成）。"""
         messages = await self.context_messages(db, ws_id=ws_id, session_id=session_id)
         answer, _usage = await self._llm.complete(messages)
-        await self.finalize(db, ws_id=ws_id, session_id=session_id, answer=answer)
+        await self.finalize(
+            db,
+            ws_id=ws_id,
+            user_id=user_id,
+            session_id=session_id,
+            answer=answer,
+            user_msg_id=user_msg_id,
+            user_content=payload.messages[-1].content,
+        )
         return answer

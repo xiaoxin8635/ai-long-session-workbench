@@ -57,6 +57,19 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = 60.0  # 单次 LLM 调用超时（含流式整体）
     llm_max_retries: int = 1  # 上游 5xx/网络错误重试次数
 
+    # ---- Embedding（M-04 起用；OpenAI 兼容 /embeddings）----
+    embedding_base_url: str | None = None  # 如 http://embedding:7997（infinity 服务）
+    embedding_api_key: str | None = None  # 本地服务无需鉴权，云 API 时填写
+    embedding_timeout_seconds: float = 30.0
+    embedding_max_retries: int = 1
+    embedding_dim: int = 1024  # bge-m3 dense 维度（与模型解耦的部署约定）
+
+    # ---- 记忆抽取/检索（M-04）----
+    extract_min_confidence: float = 0.5  # 低于该置信度的抽取结果丢弃（控噪）
+    dedup_similarity_threshold: float = 0.92  # 向量相似度判重阈值
+    retrieval_candidate_k: int = 20  # 向量召回候选数（重排前）
+    retrieval_top_k: int = 8  # 最终返回条数
+
     # ---- 向量库 ----
     vector_store: str = "pgvector"
 

@@ -6,7 +6,7 @@
 
 import uuid
 
-from sqlalchemy import Boolean, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -48,7 +48,6 @@ class WorkspaceMember(Base, TimestampMixin):
     """用户-工作区多对多关系与角色（复合主键）。"""
 
     __tablename__ = "workspace_members"
-    __table_args__ = (UniqueConstraint("workspace_id", "user_id", name="uq_ws_member"),)
 
     workspace_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

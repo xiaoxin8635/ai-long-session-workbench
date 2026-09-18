@@ -4,7 +4,8 @@
 # 服务清单：
 #   - open-webui      聊天工作台产品壳（后续二开区域）
 #   - memory-service  自研核心服务（四层记忆 / 上下文组装 / Agent Runtime）
-#   - postgres        业务数据库（会话/消息/记忆等结构化数据）
+#   - embedding       bge-m3 向量服务（infinity，OpenAI 兼容 /embeddings）
+#   - postgres        业务数据库（会话/消息/记忆等结构化数据，含 pgvector）
 #   - redis           工作记忆 / 缓存 / 分布式锁
 #
 # 使用方式：
@@ -14,7 +15,7 @@
 #      docker exec workbench-memory alembic upgrade head
 #
 # 端口约定（见 CLAUDE.md）：Open WebUI 3000 / memory-service 8100
-#                          / PostgreSQL 5432 / Redis 6379
+#                          / PostgreSQL 5432 / Redis 6379 / embedding 7997
 #
 # 说明：Milvus、Langfuse 将在后续里程碑加入本文件
 # ============================================================
@@ -47,10 +48,14 @@ services:
       # JWT 密钥：在 deploy/.env 中设置（与 POSTGRES_PASSWORD 一同管理）
       MEMORY_SERVICE_JWT_SECRET: ${MEMORY_JWT_SECRET:-change-me-in-env}
       MEMORY_SERVICE_LOG_LEVEL: INFO
-      # LLM（M-08 Chat 端点）：OpenAI 兼容服务，在 deploy/.env 中配置
+      # LLM（M-08 Chat 端点 / M-04 记忆抽取）：OpenAI 兼容服务，在 deploy/.env 中配置
       MEMORY_SERVICE_LLM_BASE_URL: ${LLM_BASE_URL:-}
       MEMORY_SERVICE_LLM_API_KEY: ${LLM_API_KEY:-}
       MEMORY_SERVICE_LLM_MODEL: ${LLM_MODEL:-}
+      MEMORY_SERVICE_EXTRACTOR_MODEL: ${EXTRACTOR_MODEL:-}
+      # Embedding（M-04 记忆向量）：本地 infinity 服务（OpenAI 兼容 /embeddings）
+      MEMORY_SERVICE_EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-http://embedding:7997}
+      MEMORY_SERVICE_EMBEDDING_MODEL: ${EMBEDDING_MODEL:-/data/BAAI/bge-m3}
     ports:
       - "${MEMORY_SERVICE_PORT:-8100}:8100"
     depends_on:
@@ -58,6 +63,22 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    networks:
+      - workbench-net
+
+  # ---------- embedding：bge-m3 向量服务（infinity） ----------
+  # 挂载宿主机 modelscope 模型目录；OpenAI 兼容 /embeddings 端点。
+  # memory-service 对 embedding 不可用自带降级（无向量入库/检索返回空），
+  # 故不设 healthcheck 硬依赖；M-07 可在此追加 reranker 模型暴露 /rerank。
+  embedding:
+    image: michaelf34/infinity:latest
+    container_name: workbench-embedding
+    restart: unless-stopped
+    command: ["v2", "--model-id", "/data/BAAI/bge-m3", "--port", "7997"]
+    volumes:
+      - ${EMBEDDING_MODELS_DIR:-D:\ai_models\modelscope_cache\models}:/data:ro
+    ports:
+      - "${EMBEDDING_PORT:-7997}:7997"
     networks:
       - workbench-net
   # ---------- PostgreSQL：业务数据库 ----------

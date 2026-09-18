@@ -1,0 +1,114 @@
+"""记忆抽取与冲突仲裁 prompt 模板（M-04，docs/06 §6）。
+
+两套 prompt：
+  - 抽取：对话轮次 → JSON 结构化事实列表（key/content/type/confidence/importance/ttl）
+  - 仲裁：旧记忆 + 新候选 → MERGE / SUPERSEDE / COEXIST 结论
+"""
+
+# 抽取系统提示词：{examples} 为 key 命名示例（约束 LLM 产出结构化 key）
+EXTRACT_SYSTEM = """\
+你是对话记忆抽取器。从"对话内容"中抽取**值得长期记住**的用户事实与偏好，
+输出严格的 JSON（不要 markdown 代码块，不要任何说明文字）。
+
+判断标准（控制噪声，宁缺毋滥）：
+- 值得抽取：用户自述的事实/背景（职业、技能、项目、偏好、约定）、
+  明确的决定与任务进度、长期有效的习惯
+- 不要抽取：寒暄、临时性提问、AI 的回答内容、单次性的闲聊细节、
+  语义与常识无差别的信息
+
+输出 JSON 结构：
+{{"facts": [
+  {{"key": "领域.主题", "content": "完整自包含的陈述句",
+    "memory_type": "semantic 或 procedural", "confidence": 0.0~1.0,
+    "importance": 0.0~1.0, "ttl_days": 整数或 null,
+    "source_message_ids": ["消息ID列表，从对话内容标注中取"]}}
+]}}
+
+字段要求：
+- key：小写英文点分层级，如 {examples}；同主题不同侧面用不同 key
+- memory_type：semantic=事实/背景，procedural=偏好/流程
+- confidence：该事实确实值得长期记住的置信度
+- importance：对用户的重要程度（求职进度 > 日常偏好）
+- ttl_days：任务进度类时效事实给 30；长期事实给 null
+- 没有可抽取内容时输出 {{"facts": []}}
+
+{extra}"""
+
+# 抽取用户消息模板：逐条消息带 ID 标注（供 source_message_ids 引用）
+EXTRACT_USER = """\
+对话内容（每条消息前有 ID 标注）：
+{transcript}"""
+
+# 冲突仲裁系统提示词
+ARBITRATE_SYSTEM = """\
+你是记忆冲突仲裁器。给定"旧记忆"与"新事实"，判断两者关系并输出结论。
+
+输出 JSON 结构（不要 markdown 代码块，不要任何说明文字）：
+{{"action": "merge 或 supersede 或 coexist",
+  "merged_content": "仅 merge 时填写：合并双方信息后的完整陈述",
+  "merged_confidence": "仅 merge 时填写：0.0~1.0，应不低于两者原值"}}
+
+判定规则：
+- merge：两者语义一致或新事实只是旧记忆的补充/细化 → 合并为一条
+- supersede：两者矛盾且新事实更可信（更新、更明确）→ 新事实替代旧记忆
+- coexist：两者矛盾但无法判定谁更可信（如用户自相矛盾且无上下文）→ 并存待裁决
+
+用户消息中若有对矛盾的澄清说明，以其为准。"""
+
+# 仲裁用户消息模板
+ARBITRATE_USER = """\
+旧记忆（key: {key}，置信度 {confidence}）：
+{old_content}
+
+新事实（置信度 {new_confidence}）：
+{new_content}"""
+
+
+def build_extract_messages(
+    transcript: str, *, key_examples: str, extra_rules: str = ""
+) -> list[dict[str, str]]:
+    """构造抽取的 LLM 输入消息。
+
+    Args:
+        transcript: 带消息 ID 标注的对话正文。
+        key_examples: key 命名示例（注入系统提示词）。
+        extra_rules: 附加抽取规则（可空）。
+
+    Returns:
+        OpenAI 格式消息列表（system + 单条 user）。
+    """
+    system = EXTRACT_SYSTEM.format(examples=key_examples, extra=extra_rules).strip()
+    return [
+        {"role": "system", "content": system},
+        {"role": "user", "content": EXTRACT_USER.format(transcript=transcript).strip()},
+    ]
+
+
+def build_arbitrate_messages(
+    *, key: str, old_content: str, old_confidence: float, new_content: str, new_confidence: float
+) -> list[dict[str, str]]:
+    """构造冲突仲裁的 LLM 输入消息。
+
+    Args:
+        key: 冲突双方共同的记忆 key。
+        old_content: 旧记忆正文。
+        old_confidence: 旧记忆置信度。
+        new_content: 新事实正文。
+        new_confidence: 新事实置信度。
+
+    Returns:
+        OpenAI 格式消息列表（system + 单条 user）。
+    """
+    return [
+        {"role": "system", "content": ARBITRATE_SYSTEM.strip()},
+        {
+            "role": "user",
+            "content": ARBITRATE_USER.format(
+                key=key,
+                confidence=old_confidence,
+                old_content=old_content,
+                new_confidence=new_confidence,
+                new_content=new_content,
+            ).strip(),
+        },
+    ]

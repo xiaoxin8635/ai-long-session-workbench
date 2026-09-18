@@ -80,7 +80,7 @@ async def chat_completions(payload: ChatCompletionRequest, user: CurrentUser, db
 
     # ---- 会话解析 + 用户消息落库（任何响应模式前完成）----
     session_id = await service.resolve_session(db, ws_id=ws_id, user=user, payload=payload)
-    await service.prepare(db, ws_id=ws_id, session_id=session_id, payload=payload)
+    user_msg_id = await service.prepare(db, ws_id=ws_id, session_id=session_id, payload=payload)
 
     completion_id = f"chatcmpl-{uuid_mod.uuid4().hex}"
     created = int(time.time())
@@ -89,7 +89,12 @@ async def chat_completions(payload: ChatCompletionRequest, user: CurrentUser, db
     if not payload.stream:
         try:
             answer = await service.complete_answer(
-                db, ws_id=ws_id, session_id=session_id, payload=payload
+                db,
+                ws_id=ws_id,
+                user_id=user.id,
+                session_id=session_id,
+                payload=payload,
+                user_msg_id=user_msg_id,
             )
         except LLMError as exc:
             raise AppError("llm_upstream_error", 502, str(exc)) from exc
@@ -101,7 +106,12 @@ async def chat_completions(payload: ChatCompletionRequest, user: CurrentUser, db
         first_chunk = True
         try:
             async for delta_text in service.stream_answer(
-                db, ws_id=ws_id, session_id=session_id, payload=payload
+                db,
+                ws_id=ws_id,
+                user_id=user.id,
+                session_id=session_id,
+                payload=payload,
+                user_msg_id=user_msg_id,
             ):
                 answer_parts.append(delta_text)
                 chunk: dict = {

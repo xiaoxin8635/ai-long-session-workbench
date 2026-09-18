@@ -75,11 +75,15 @@ class LLMClient:
                 last_error = LLMError(f"网络错误: {exc}")
         raise last_error or LLMError("未知上游错误")
 
-    async def complete(self, messages: list[dict[str, str]]) -> tuple[str, LLMUsage]:
+    async def complete(
+        self, messages: list[dict[str, str]], *, json_mode: bool = False
+    ) -> tuple[str, LLMUsage]:
         """非流式补全。
 
         Args:
             messages: OpenAI 格式消息列表。
+            json_mode: True 时请求 response_format=json_object（结构化抽取用，
+                要求 prompt 中已给出 JSON 结构说明）。
 
         Returns:
             (完整回答文本, usage)。
@@ -87,7 +91,14 @@ class LLMClient:
         Raises:
             LLMError: 上游失败（含协议解析异常）。
         """
-        resp = await self._post({"model": self._model, "messages": messages, "stream": False})
+        payload: dict[str, Any] = {
+            "model": self._model,
+            "messages": messages,
+            "stream": False,
+        }
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
+        resp = await self._post(payload)
         try:
             data = resp.json()
             content = data["choices"][0]["message"]["content"] or ""
@@ -148,6 +159,7 @@ class LLMClient:
 # ---- 进程级单例与依赖注入 ----
 
 _llm_client: LLMClient | None = None
+_extractor_client: LLMClient | None = None
 
 
 def get_llm_client() -> LLMClient:
@@ -169,7 +181,30 @@ def get_llm_client() -> LLMClient:
     return _llm_client
 
 
+def get_extractor_client() -> LLMClient:
+    """返回记忆抽取用 LLM 客户端（docs/01：抽取用便宜的小模型）。
+
+    extractor_model 已配置时使用该模型（同一 base_url/key），
+    否则回落到主模型。
+
+    Raises:
+        LLMNotConfigured: base_url / model 未配置。
+    """
+    global _extractor_client
+    if _extractor_client is None:
+        settings = get_settings()
+        if not settings.llm_base_url or not settings.llm_model:
+            raise LLMNotConfigured("LLM 未配置（MEMORY_SERVICE_LLM_BASE_URL / LLM_MODEL）")
+        _extractor_client = LLMClient(
+            base_url=settings.llm_base_url,
+            api_key=settings.llm_api_key or "",
+            model=settings.extractor_model or settings.llm_model,
+        )
+    return _extractor_client
+
+
 def reset_llm_client() -> None:
     """清空客户端缓存（配置变更/测试重置时调用）。"""
-    global _llm_client
+    global _llm_client, _extractor_client
     _llm_client = None
+    _extractor_client = None

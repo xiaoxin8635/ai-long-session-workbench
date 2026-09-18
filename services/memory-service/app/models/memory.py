@@ -1,12 +1,14 @@
 """记忆模型（docs/01 §4.2：memories / memory_events）。
 
 memories 为统一长期记忆表：memory_type 区分 episodic/semantic/procedural，
-向量本体存向量库（vector_ref 引用），版本链通过 supersedes_id 串联。
+embedding 为 content 的稠密向量（pgvector 余弦检索），版本链通过
+supersedes_id 串联。
 """
 
 import uuid
 from datetime import datetime
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     DateTime,
     Float,
@@ -22,6 +24,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDMixin
 from app.models.enums import MemoryEventSource, MemoryEventType, MemoryStatus, MemoryType
+
+# 向量维度：bge-m3 dense 输出 1024 维（embedding 服务与模型解耦，维度固定）
+EMBEDDING_DIM = 1024
 
 
 class Memory(UUIDMixin, TimestampMixin, Base):
@@ -54,6 +59,8 @@ class Memory(UUIDMixin, TimestampMixin, Base):
     key: Mapped[str] = mapped_column(String(128), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     vector_ref: Mapped[str | None] = mapped_column(String(128))
+    # content 的稠密向量（M-04 检索用；抽取时 embedding 服务不可用则置空降级为无向量）
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM))
 
     confidence: Mapped[float] = mapped_column(Float, default=0.5, nullable=False)
     importance: Mapped[float] = mapped_column(Float, default=0.5, nullable=False)

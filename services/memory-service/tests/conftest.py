@@ -16,6 +16,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
+from sqlalchemy import text
 
 # ---- 测试数据库环境引导（必须先于 app 导入执行）----
 _DEPLOY_ENV = Path(__file__).resolve().parents[3] / "deploy" / ".env"
@@ -86,6 +87,9 @@ async def _database() -> AsyncIterator[None]:
     """
     engine = get_engine()
     async with engine.begin() as conn:
+        # memories.embedding 为 vector 类型，建表前必须先装 pgvector 扩展
+        # （pgvector/pgvector 镜像自带；幂等）
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     yield
