@@ -8,7 +8,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import health
+from app.api.routes import auth, health, workspaces
 from app.core.config import get_settings
 from app.core.errors import AppError, app_error_handler
 from app.core.logging import setup_logging
@@ -50,6 +50,8 @@ def create_app() -> FastAPI:
 
     # ---- 路由 ----
     app.include_router(health.router, tags=["health"])
+    app.include_router(auth.router)
+    app.include_router(workspaces.router)
 
     return app
 
