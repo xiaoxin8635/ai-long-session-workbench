@@ -7,7 +7,9 @@ class ChatMessage(BaseModel):
     """OpenAI 格式消息（M1 直通阶段仅消费 role/content）。"""
 
     role: str = Field(pattern="^(user|assistant|system|tool)$")
-    content: str
+    # 与内层 MessageCreate 的约束保持一致：空 content 在入口即 422，
+    # 避免落到 handler 内部才校验失败变成 500
+    content: str = Field(min_length=1)
 
 
 class ChatMetadata(BaseModel):
@@ -28,6 +30,19 @@ class ChatCompletionRequest(BaseModel):
     messages: list[ChatMessage] = Field(min_length=1)
     stream: bool = True
     metadata: ChatMetadata
+    temperature: float | None = Field(default=None, ge=0, le=2)
+
+
+class TaskCompletionRequest(BaseModel):
+    """POST /v1/tasks/completions 请求体（Open WebUI 标题/跟进等无状态任务）。
+
+    与 ChatCompletionRequest 的区别：不落库、不建会话、不写 Working Memory，
+    纯 LLM 透传，避免任务 prompt 污染用户会话历史。
+    """
+
+    messages: list[ChatMessage] = Field(min_length=1)
+    metadata: ChatMetadata
+    max_tokens: int | None = Field(default=None, ge=1, le=8192)
     temperature: float | None = Field(default=None, ge=0, le=2)
 
 

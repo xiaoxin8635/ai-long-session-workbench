@@ -175,6 +175,57 @@ async def test_chat_auth_and_isolation(chat_client: AsyncClient) -> None:
     assert bad_ws.status_code == 422
 
 
+async def test_empty_content_rejected_422(chat_client: AsyncClient) -> None:
+    """空 content：入口 schema 即 422（不落到 handler 内部变 500）。"""
+    headers, ws = await _auth_setup(chat_client, "chat_empty")
+    resp = await chat_client.post(
+        "/v1/chat/completions",
+        headers=headers,
+        json={
+            "messages": [{"role": "user", "content": ""}],
+            "metadata": {"workspace_id": ws["id"]},
+        },
+    )
+    assert resp.status_code == 422
+
+
+async def test_task_completions_stateless(chat_client: AsyncClient, fake_llm: FakeLLM) -> None:
+    """任务端点：返回 OpenAI 结构且不建会话不落库（无状态）。"""
+    headers, ws = await _auth_setup(chat_client, "chat_task")
+    before = (
+        await chat_client.get(f"/api/sessions?workspace_id={ws['id']}", headers=headers)
+    ).json()["total"]
+    resp = await chat_client.post(
+        "/v1/tasks/completions",
+        headers=headers,
+        json={
+            "metadata": {"workspace_id": ws["id"]},
+            "messages": [{"role": "user", "content": "生成对话标题"}],
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["object"] == "chat.completion"
+    assert data["choices"][0]["message"]["content"] == fake_llm.reply
+    assert data["usage"]["prompt_tokens"] == 10  # 来自 LLM 真实 usage 透传
+    after = (
+        await chat_client.get(f"/api/sessions?workspace_id={ws['id']}", headers=headers)
+    ).json()["total"]
+    assert after == before  # 未新建会话
+
+
+async def test_task_completions_requires_auth(client: AsyncClient) -> None:
+    """任务端点鉴权：无令牌 401。"""
+    resp = await client.post(
+        "/v1/tasks/completions",
+        json={
+            "metadata": {"workspace_id": "00000000-0000-0000-0000-000000000000"},
+            "messages": [{"role": "user", "content": "x"}],
+        },
+    )
+    assert resp.status_code == 401
+
+
 async def test_llm_not_configured_503(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """LLM 未配置：503 problem+json（不 500）。"""
 

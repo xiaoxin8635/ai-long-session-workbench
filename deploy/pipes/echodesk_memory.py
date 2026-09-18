@@ -21,7 +21,7 @@
 """
 title: EchoDesk Memory
 author: EchoDesk
-version: 0.1.0
+version: 0.2.0
 required_open_webui_version: 0.5.0
 """
 
@@ -50,6 +50,10 @@ class Pipe:
         self._sessions: dict[str, str] = {}
 
     # ---------- 内部工具 ----------
+
+    def _auth_header(self) -> dict[str, str]:
+        """构造 Bearer 认证头。"""
+        return {"Authorization": f"Bearer {self._token}"}
 
     async def _login(self) -> None:
         """登录 EchoDesk 获取 access token 与个人 workspace id。
@@ -100,14 +104,80 @@ class Pipe:
         )
         return await client.send(request, stream=True)
 
+    async def _post_task(self, messages: list[dict[str, str]]) -> str:
+        """调用无状态任务端点（不落库），返回回答文本。
+
+        Open WebUI 的标题/跟进生成等任务调用走此路径，避免任务 prompt
+        混入用户会话历史污染 Working Memory。
+
+        Args:
+            messages: 任务 prompt 消息列表（原样透传）。
+
+        Returns:
+            回答文本；上游异常时返回空字符串（任务失败不阻塞主对话）。
+        """
+        url = f"{self.valves.MEMORY_BASE_URL}/v1/tasks/completions"
+        payload = {"metadata": {"workspace_id": self._workspace_id}, "messages": messages}
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(url, headers=self._auth_header(), json=payload)
+            if resp.status_code == 401:  # 令牌过期自愈：重登一次
+                await self._login()
+                resp = await client.post(url, headers=self._auth_header(), json=payload)
+            if resp.status_code != 200:
+                print(
+                    f"[echodesk-pipe] 任务端点错误 HTTP {resp.status_code}: {resp.text}",
+                    flush=True,
+                )
+                return ""
+            return resp.json()["choices"][0]["message"]["content"]
+
     # ---------- Open WebUI 入口 ----------
 
-    async def pipe(self, body: dict, __user__: dict) -> AsyncGenerator[str, None]:
-        """管道主入口：转发本轮 user 消息并流式回传 EchoDesk 回答。
+    async def pipe(
+        self,
+        body: dict,
+        __user__: dict,
+        __task__: str | None = None,
+        __chat_id__: str | None = None,
+    ) -> Any:
+        """管道主入口：任务调用走无状态端点，主对话走会话端点流式回传。
 
         Args:
             body: Open WebUI 请求体（messages 历史、chat_id 等）。
             __user__: Open WebUI 当前用户信息（M1 未用，预留多租户映射）。
+            __task__: Open WebUI 注入的任务标记（title_generation 等）；
+                非空表示本次为无状态任务调用，不落库。
+            __chat_id__: Open WebUI 注入的对话 id（优先于 body 内的同名字段）。
+
+        Returns:
+            任务调用返回完整回答字符串；主对话返回流式文本增量 generator。
+        """
+        if self._token is None:
+            await self._login()
+
+        # ---- 任务调用（标题/跟进生成）：无状态端点，不污染会话 ----
+        if __task__:
+            print(f"[echodesk-pipe] task={__task__!r}", flush=True)
+            task_messages = [
+                {"role": m.get("role", "user"), "content": m.get("content", "")}
+                for m in body.get("messages", [])
+                if isinstance(m.get("content"), str) and m.get("content")
+            ]
+            if not task_messages:
+                return ""
+            return await self._post_task(task_messages)
+
+        # ---- 主对话：流式 generator ----
+        return self._stream_chat(body, chat_id=__chat_id__ or body.get("chat_id"))
+
+    async def _stream_chat(
+        self, body: dict, chat_id: Any
+    ) -> AsyncGenerator[str, None]:
+        """主对话路径：转发本轮 user 消息并流式回传 EchoDesk 回答。
+
+        Args:
+            body: Open WebUI 请求体。
+            chat_id: 对话 id（用于 chat_id → session_id 映射）。
 
         Yields:
             回答文本增量分片。
@@ -123,11 +193,16 @@ class Pipe:
                 seg.get("text", "") if isinstance(seg, dict) else str(seg)
                 for seg in content
             )
-        chat_id = str(body.get("chat_id", ""))
-        session_id = self._sessions.get(chat_id)
-
-        if self._token is None:
-            await self._login()
+        # 观测日志（进容器 stdout，排障用）：Open WebUI 传入的 body 形态
+        print(
+            f"[echodesk-pipe] chat_id={chat_id!r} "
+            f"roles={[m.get('role') for m in body.get('messages', [])]} "
+            f"content_type={type(user_messages[-1].get('content')).__name__} "
+            f"content={content[:80]!r}",
+            flush=True,
+        )
+        chat_key = str(chat_id or "")
+        session_id = self._sessions.get(chat_key)
 
         resp = await self._post_chat(content, session_id)
         if resp.status_code == 401:  # 令牌过期自愈：重登一次
@@ -135,8 +210,11 @@ class Pipe:
             await self._login()
             resp = await self._post_chat(content, session_id)
         if resp.status_code != 200:
-            detail = resp.text
+            # 流式响应必须先 aread() 才能访问内容（直接 .text 会抛
+            # "Attempted to access streaming response content"）
+            detail = (await resp.aread()).decode("utf-8", errors="replace")
             await resp.aclose()
+            print(f"[echodesk-pipe] 上游错误 HTTP {resp.status_code}: {detail}", flush=True)
             yield f"[EchoDesk Pipe] 上游错误 HTTP {resp.status_code}: {detail}"
             return
 
@@ -151,7 +229,7 @@ class Pipe:
                     continue
                 sid = chunk.get("metadata", {}).get("session_id")
                 if sid:
-                    self._sessions[chat_id] = sid
+                    self._sessions[chat_key] = sid
                 delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content")
                 if delta:
                     yield delta

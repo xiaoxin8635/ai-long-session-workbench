@@ -6,6 +6,7 @@
   - 流式：SSE 分片 delta → finish 分片（含 usage 估算）→ [DONE]
   - 非流式：标准 chat.completion JSON
   - LLM 未配置 → 503；上游失败 → 502（流开始后以 error 事件收尾）
+  - /v1/tasks/completions：Open WebUI 标题/跟进等无状态任务，不落库纯透传
 """
 
 import json
@@ -22,7 +23,7 @@ from app.core.errors import AppError, PermissionDeniedError
 from app.llm.client import LLMError, LLMNotConfigured, get_llm_client
 from app.memory.working_memory import WorkingMemory
 from app.repositories import workspace_repo
-from app.schemas.chat import ChatCompletionRequest
+from app.schemas.chat import ChatCompletionRequest, ChatMetadata, TaskCompletionRequest
 from app.services.chat_service import ChatService
 from app.services.token_counter import count_tokens
 
@@ -36,6 +37,31 @@ def _sse(data: dict) -> str:
     return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
+async def _require_member(metadata: ChatMetadata, user: CurrentUser, db: DbDep) -> uuid_mod.UUID:
+    """校验 metadata.workspace_id 合法且当前用户是其成员（403 防枚举）。
+
+    Args:
+        metadata: 请求携带的 EchoDesk 扩展 metadata。
+        user: 当前认证用户。
+        db: 数据库会话。
+
+    Returns:
+        解析后的 workspace UUID。
+
+    Raises:
+        AppError: workspace_id 非法（422）。
+        PermissionDeniedError: 非成员或 workspace 不存在（403，统一不区分）。
+    """
+    try:
+        ws_id = uuid_mod.UUID(metadata.workspace_id)
+    except ValueError as exc:
+        raise AppError("invalid_metadata", 422, "metadata.workspace_id 非法") from exc
+    member = await workspace_repo.get_member(db, ws_id=ws_id, user_id=user.id)
+    if member is None:
+        raise PermissionDeniedError()
+    return ws_id
+
+
 @router.post(
     "/chat/completions",
     summary="OpenAI 兼容对话补全（EchoDesk 扩展 metadata）",
@@ -44,13 +70,7 @@ def _sse(data: dict) -> str:
 async def chat_completions(payload: ChatCompletionRequest, user: CurrentUser, db: DbDep):
     """M1 直通版：会话持久化 + Working Memory 窗口 + LLM 透传。"""
     # ---- workspace 校验（body.metadata 传入，非 query）----
-    try:
-        ws_id = uuid_mod.UUID(payload.metadata.workspace_id)
-    except ValueError as exc:
-        raise AppError("invalid_metadata", 422, "metadata.workspace_id 非法") from exc
-    member = await workspace_repo.get_member(db, ws_id=ws_id, user_id=user.id)
-    if member is None:
-        raise PermissionDeniedError()
+    ws_id = await _require_member(payload.metadata, user, db)
 
     try:
         llm = get_llm_client()
@@ -134,4 +154,40 @@ def _non_stream_response(completion_id: str, created: int, answer: str, session_
             }
         ],
         "usage": {"completion_tokens": count_tokens(answer)},
+    }
+
+
+@router.post(
+    "/tasks/completions",
+    summary="无状态任务补全（Open WebUI 标题/跟进生成等，不落库）",
+)
+async def task_completions(payload: TaskCompletionRequest, user: CurrentUser, db: DbDep) -> dict:
+    """纯 LLM 透传：不建会话、不落库、不写 Working Memory（避免任务 prompt 污染会话历史）。"""
+    await _require_member(payload.metadata, user, db)
+    try:
+        llm = get_llm_client()
+    except LLMNotConfigured as exc:
+        raise AppError("llm_not_configured", 503, str(exc)) from exc
+
+    messages = [{"role": m.role, "content": m.content} for m in payload.messages]
+    try:
+        answer, usage = await llm.complete(messages)
+    except LLMError as exc:
+        raise AppError("llm_upstream_error", 502, str(exc)) from exc
+    return {
+        "id": f"taskcmpl-{uuid_mod.uuid4().hex}",
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": "echodesk",
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": answer},
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {
+            "prompt_tokens": usage.prompt_tokens,
+            "completion_tokens": usage.completion_tokens,
+        },
     }
