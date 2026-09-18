@@ -17,6 +17,7 @@ class Session(UUIDMixin, TimestampMixin, Base):
     Attributes:
         rolling_summary: 滚动摘要（M-06 写入；当前会话上下文的一部分）。
         token_total: 会话累计 token（成本统计口径之一）。
+        version: 乐观锁版本（并发追加消息时条件更新，冲突方 409）。
     """
 
     __tablename__ = "sessions"
@@ -35,6 +36,7 @@ class Session(UUIDMixin, TimestampMixin, Base):
     rolling_summary: Mapped[str | None] = mapped_column(Text)
     token_total: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
 
 class Message(UUIDMixin, Base):

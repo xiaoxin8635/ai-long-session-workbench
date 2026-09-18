@@ -9,7 +9,7 @@ import uuid
 from collections.abc import AsyncIterator, Callable
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Depends, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -87,6 +87,28 @@ async def get_workspace(
 
 
 CurrentWorkspace = Annotated[Workspace, Depends(get_workspace)]
+
+
+async def get_workspace_from_query(
+    workspace_id: Annotated[uuid.UUID, Query(description="目标 workspace ID")],
+    user: CurrentUser,
+    db: DbDep,
+) -> Workspace:
+    """query 参数版 workspace 校验（供 /api/sessions 等无路径前缀的路由）。
+
+    Raises:
+        PermissionDeniedError: 403 —— 非成员（含 workspace 不存在）。
+    """
+    member = await workspace_repo.get_member(db, ws_id=workspace_id, user_id=user.id)
+    if member is None:
+        raise PermissionDeniedError()
+    workspace = await workspace_repo.get_by_id(db, workspace_id)
+    if workspace is None:
+        raise PermissionDeniedError()
+    return workspace
+
+
+CurrentWorkspaceQuery = Annotated[Workspace, Depends(get_workspace_from_query)]
 
 
 def require_role(minimum: MemberRole) -> Callable[..., object]:

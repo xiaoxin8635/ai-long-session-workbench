@@ -71,7 +71,11 @@ async def client(app: FastAPI) -> AsyncIterator[AsyncClient]:
 
 @pytest.fixture(autouse=True)
 async def _database() -> AsyncIterator[None]:
-    """集成测试数据隔离：建表（幂等）+ 清空全部表 → 测试 → 清理资源。
+    """集成测试数据隔离：重建全部表 → 测试 → 清理资源。
+
+    用 drop_all + create_all（而非 truncate + create_all）：
+    模型新增列时旧表结构会残留（create_all 不做 ALTER），
+    每用例全量重建可根治"测试库 schema 陈旧"这一类问题。
 
     Windows + asyncpg 关键点：pytest-asyncio 每个用例使用新事件循环，
     而引擎连接池 / Redis 客户端是进程级单例、绑定创建时的循环；
@@ -82,9 +86,8 @@ async def _database() -> AsyncIterator[None]:
     """
     engine = get_engine()
     async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
-        for table in reversed(Base.metadata.sorted_tables):
-            await conn.execute(table.delete())
     yield
     await close_redis()
     await engine.dispose()
