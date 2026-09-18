@@ -1,0 +1,23 @@
+# ============================================================
+# EchoDesk 上下文预算 profile：default（docs/01 §5.3.1 默认策略）
+#
+# - sections 各区块占 (context_window_tokens - reserve_output) 的比例，总和 = 1.0
+# - evict_order：全局超预算时从前往后整区块放弃（system 永不裁剪故不列；
+#   tool_results 属当轮必须，靠摘要化裁剪而非整块丢弃，亦不列）
+# - 窗口大小由 MEMORY_SERVICE_CONTEXT_WINDOW_TOKENS 配置（当前 4000）
+# ============================================================
+version: 1
+
+# 输出预留占比（不参与区块分配，保证回答空间）
+reserve_output: 0.10
+
+sections:
+  system: 0.05        # 角色提示 + 记忆使用说明（固定不裁）
+  procedural: 0.05    # 偏好/工作流记忆
+  semantic: 0.15      # 事实记忆
+  episodic: 0.10      # 会话摘要（本会话 + 跨会话）
+  working: 0.30       # 近期消息原文（含当前问题）
+  rag: 0.25           # 知识库片段（M-07 接入）
+  tool_results: 0.10  # 当轮工具结果（M-09 接入）
+
+evict_order: [rag, episodic, semantic, working, procedural]

@@ -15,7 +15,7 @@ from typing import Any
 
 from redis.asyncio import Redis
 
-from app.services.token_counter import count_tokens
+from app.context.tokenizer import count_tokens
 
 logger = logging.getLogger(__name__)
 

@@ -112,6 +112,31 @@ async def get_workspace_from_query(
 CurrentWorkspaceQuery = Annotated[Workspace, Depends(get_workspace_from_query)]
 
 
+async def require_ws_member(raw_ws_id: str, user: User, db: AsyncSession) -> uuid.UUID:
+    """body 携带 workspace_id 时的成员校验（chat / context 调试等场景）。
+
+    Args:
+        raw_ws_id: 请求体中的 workspace_id 原始字符串。
+        user: 当前认证用户。
+        db: 数据库会话。
+
+    Returns:
+        解析后的 workspace UUID。
+
+    Raises:
+        AppError: 422 —— workspace_id 非 UUID。
+        PermissionDeniedError: 403 —— 非成员或 workspace 不存在（统一不区分）。
+    """
+    try:
+        ws_id = uuid.UUID(raw_ws_id)
+    except ValueError as exc:
+        raise AppError("invalid_metadata", 422, "metadata.workspace_id 非法") from exc
+    member = await workspace_repo.get_member(db, ws_id=ws_id, user_id=user.id)
+    if member is None:
+        raise PermissionDeniedError()
+    return ws_id
+
+
 def require_role(minimum: MemberRole) -> Callable[..., object]:
     """构造角色门槛依赖：返回 WorkspaceMember（已通过成员与角色双重校验）。
 

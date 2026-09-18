@@ -1,6 +1,7 @@
-"""Chat 服务：M1 直通编排（docs/06 §M-08 + M-04 后台抽取）。
+"""Chat 服务：M1 直通编排（docs/06 §M-08 + M-04 后台抽取 + M-05 上下文装配）。
 
-流程：解析/创建会话 → 持久化用户消息 → Working Memory 取窗口 + 滚动摘要
+流程：解析/创建会话 → 持久化用户消息 → ContextBuilder 组装
+（系统提示 + M-04 记忆检索 + 滚动摘要 + Working Memory 窗口，按区块预算裁剪）
 → LLM 流式生成 → 持久化回答 + 回写窗口 → 触发滚动摘要压缩（M-06）
 → 后台派发记忆抽取任务（M-04，不阻塞响应）。
 
@@ -15,7 +16,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import get_settings
+from app.context.builder import ContextBuilder, default_builder
 from app.core.errors import NotFoundError
 from app.llm.client import LLMClient
 from app.memory.pipeline import extract_pipeline
@@ -29,8 +30,6 @@ from app.summarizer.rolling import RollingSummarizer
 
 logger = logging.getLogger(__name__)
 
-# 滚动摘要注入为 system 消息时的前缀（与窗口消息的来源区分）
-_SUMMARY_SYSTEM_PREFIX = "[会话早期内容摘要]\n"
 # 会话默认标题：取首条用户消息截断
 _TITLE_MAX = 30
 
@@ -65,8 +64,9 @@ class ChatService:
         working_memory: WorkingMemory,
         summarizer: RollingSummarizer | None = None,
         extract_hook: Callable[..., Awaitable[object]] | None = _spawn_extraction,
+        context_builder: ContextBuilder | None = None,
     ) -> None:
-        """注入 LLM 客户端、Working Memory、滚动摘要器与抽取派发钩子。
+        """注入 LLM 客户端、Working Memory、滚动摘要器、抽取钩子与上下文装配器。
 
         Args:
             llm: 对话 LLM 客户端。
@@ -74,11 +74,14 @@ class ChatService:
             summarizer: 滚动摘要器；None 时用 llm+working_memory 默认构造。
             extract_hook: 每轮回答后的记忆抽取派发函数（签名同 _spawn_extraction）；
                 None 禁用（测试隔离用）。
+            context_builder: 上下文装配器（M-05）；None 时基于 working_memory
+                惰性构造（embedding 未配置则检索降级）。
         """
         self._llm = llm
         self._wm = working_memory
         self._summarizer = summarizer or RollingSummarizer(llm, working_memory)
         self._extract_hook = extract_hook
+        self._context_builder = context_builder or default_builder(working_memory)
 
     async def resolve_session(
         self, db: AsyncSession, *, ws_id: uuid.UUID, user: User, payload: ChatCompletionRequest
@@ -123,21 +126,23 @@ class ChatService:
         return message.id
 
     async def context_messages(
-        self, db: AsyncSession, *, ws_id: uuid.UUID, session_id: uuid.UUID
+        self,
+        db: AsyncSession,
+        *,
+        ws_id: uuid.UUID,
+        user_id: uuid.UUID,
+        session_id: uuid.UUID,
+        query: str,
     ) -> list[dict[str, str]]:
-        """组装 LLM 输入：滚动摘要(system) + Working Memory 窗口。
+        """组装 LLM 输入（M-05 ContextBuilder 全权负责）。
 
-        摘要覆盖窗口之外的早期内容，窗口覆盖近期消息，两者衔接不重不漏。
+        system（含记忆标签/摘要/知识注入）+ Working Memory 窗口，
+        按区块预算裁剪；当前用户问题作为长期记忆检索的 query。
         """
-        session = await session_repo.get_by_id(db, workspace_id=ws_id, session_id=session_id)
-        entries = await self._wm.window(session_id, max_tokens=get_settings().context_window_tokens)
-        messages: list[dict[str, str]] = []
-        if session is not None and session.rolling_summary:
-            messages.append(
-                {"role": "system", "content": _SUMMARY_SYSTEM_PREFIX + session.rolling_summary}
-            )
-        messages.extend({"role": e["role"], "content": e["content"]} for e in entries)
-        return messages
+        assembled = await self._context_builder.build(
+            db, ws_id=ws_id, user_id=user_id, session_id=session_id, query=query
+        )
+        return assembled.messages
 
     async def finalize(
         self,
@@ -194,7 +199,13 @@ class ChatService:
         user_msg_id: uuid.UUID,
     ) -> AsyncIterator[str]:
         """流式生成并逐段产出文本；结束后统一落库并触发压缩/抽取。"""
-        messages = await self.context_messages(db, ws_id=ws_id, session_id=session_id)
+        messages = await self.context_messages(
+            db,
+            ws_id=ws_id,
+            user_id=user_id,
+            session_id=session_id,
+            query=payload.messages[-1].content,
+        )
         chunks: list[str] = []
         async for delta in self._llm.stream_chat(messages):
             chunks.append(delta)
@@ -220,7 +231,13 @@ class ChatService:
         user_msg_id: uuid.UUID,
     ) -> str:
         """非流式生成；返回完整回答（落库在内部完成）。"""
-        messages = await self.context_messages(db, ws_id=ws_id, session_id=session_id)
+        messages = await self.context_messages(
+            db,
+            ws_id=ws_id,
+            user_id=user_id,
+            session_id=session_id,
+            query=payload.messages[-1].content,
+        )
         answer, _usage = await self._llm.complete(messages)
         await self.finalize(
             db,

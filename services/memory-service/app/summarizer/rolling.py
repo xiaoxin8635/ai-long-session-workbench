@@ -15,6 +15,7 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.context.tokenizer import count_tokens
 from app.core.config import get_settings
 from app.core.deps import get_redis
 from app.core.errors import ConflictError
@@ -23,7 +24,6 @@ from app.memory.working_memory import WorkingMemory
 from app.models.enums import SessionStatus
 from app.repositories import memory_repo, session_repo
 from app.services.session_service import SessionLock
-from app.services.token_counter import count_tokens
 from app.summarizer.prompts import build_compress_messages, build_incremental_messages
 
 logger = logging.getLogger(__name__)

@@ -5,7 +5,7 @@
   - 缓存命中零调用（窗口内无滑出段时不调模型）
   - 摘要超预算二级压缩
   - episodic upsert 幂等（version 自增，不重复建条目）
-  - 100 轮长对话上下文 token 有界（DoD 稳定性验收）
+  - 100 轮长对话上下文 token 有界（DoD 稳定性验收，M-05 起按装配口径）
 """
 
 import uuid
@@ -13,6 +13,10 @@ import uuid
 import pytest
 from sqlalchemy import select
 
+from app.context.budget import ContextBudget
+from app.context.builder import DEFAULT_SYSTEM_PROMPT
+from app.context.schemas import SectionKey
+from app.context.tokenizer import count_tokens
 from app.core.config import Settings
 from app.core.deps import get_redis
 from app.db.session import get_session_factory
@@ -29,15 +33,18 @@ from app.repositories import session_repo, user_repo, workspace_repo
 from app.repositories.memory_repo import summary_memory_key
 from app.services.chat_service import ChatService
 from app.services.session_service import SessionService
-from app.services.token_counter import count_tokens
 from app.summarizer.rolling import RollingSummarizer
 
 # 小预算测试口径：窗口 40 token（约 2 条 15 字中文消息），
 # 摘要上限 50 token（构造超限摘要触发二级压缩）
 _WINDOW_TOKENS = 40
 _SUMMARY_MAX_TOKENS = 50
-# 100 轮有界性验收的上下文总 token 上界：摘要(≤50) + 窗口(≤40) + 摘要前缀等余量
-_CONTEXT_TOKEN_CEILING = 150
+# 装配预算（M-05）：需容纳 system 提示 + 摘要(≤50) + 窗口(≤40)
+_BUILDER_WINDOW_TOKENS = 600
+# 100 轮有界性验收的上下文总 token 上界：system + 摘要 + 窗口 + 标签包装余量
+_CONTEXT_TOKEN_CEILING = (
+    count_tokens(DEFAULT_SYSTEM_PROMPT) + _SUMMARY_MAX_TOKENS + _WINDOW_TOKENS + 30
+)
 
 
 class FakeSummaryLLM:
@@ -62,30 +69,59 @@ class FakeSummaryLLM:
 def small_budget(monkeypatch: pytest.MonkeyPatch) -> Settings:
     """注入小预算配置（避免真实 4000 token 窗口需要海量测试消息）。
 
-    同时 patch rolling 与 chat_service 两处 get_settings 引用，
-    保证压缩触发与上下文组装使用同一套预算口径。
+    rolling/summarizer 用 Settings 小窗口（滑出逻辑）；
+    ContextBuilder 用小装配预算（M-05 起上下文组装按区块预算），
+    两处口径互相独立、均在测试内 patch。
     """
     settings = Settings(
         context_window_tokens=_WINDOW_TOKENS,
         rolling_summary_max_tokens=_SUMMARY_MAX_TOKENS,
     )
     monkeypatch.setattr("app.summarizer.rolling.get_settings", lambda: settings)
-    monkeypatch.setattr("app.services.chat_service.get_settings", lambda: settings)
+    builder_budget = ContextBudget(
+        window_tokens=_BUILDER_WINDOW_TOKENS,
+        reserve_output=60,
+        sections={
+            SectionKey.SYSTEM: -1,
+            SectionKey.PROCEDURAL: 11,
+            SectionKey.SEMANTIC: 11,
+            SectionKey.EPISODIC: 81,
+            SectionKey.WORKING: 270,
+            SectionKey.RAG: 11,
+            SectionKey.TOOL_RESULTS: 11,
+        },
+        evict_order=(
+            SectionKey.RAG,
+            SectionKey.EPISODIC,
+            SectionKey.SEMANTIC,
+            SectionKey.WORKING,
+            SectionKey.PROCEDURAL,
+        ),
+        profile="test-small",
+    )
+    monkeypatch.setattr("app.context.builder.load_budget", lambda profile=None: builder_budget)
     return settings
 
 
-async def _prepare_session() -> tuple[object, uuid.UUID, uuid.UUID]:
-    """创建 user/workspace/session，返回 (db, ws_id, session_id)。
+async def _prepare_session() -> tuple[object, uuid.UUID, uuid.UUID, uuid.UUID]:
+    """创建 user/workspace/session，返回 (db, ws_id, user_id, session_id)。
 
-    调用方负责在使用结束后 close 返回的 db 会话。
+    调用方负责在使用结束后 close 返回的 db 会话；内部异常时此处
+    自行 close 防连接泄漏（残留 idle in transaction 会阻塞后续用例建表）。
     """
     db = get_session_factory()()
-    user = await user_repo.create(db, username=f"sum{uuid.uuid4().hex[:8]}", password_hash="x" * 60)
-    ws = await workspace_repo.create(db, name="摘要测试空间", owner_id=user.id)
-    await workspace_repo.add_member(db, ws_id=ws.id, user_id=user.id, role=MemberRole.OWNER)
-    session = await SessionService().create(db, ws_id=ws.id, user=user, title="摘要测试")
-    await db.commit()
-    return db, ws.id, session.id
+    try:
+        user = await user_repo.create(
+            db, username=f"sum{uuid.uuid4().hex[:8]}", password_hash="x" * 60
+        )
+        ws = await workspace_repo.create(db, name="摘要测试空间", owner_id=user.id)
+        await workspace_repo.add_member(db, ws_id=ws.id, user_id=user.id, role=MemberRole.OWNER)
+        session = await SessionService().create(db, ws_id=ws.id, user=user, title="摘要测试")
+        await db.commit()
+    except BaseException:
+        await db.close()
+        raise
+    return db, ws.id, user.id, session.id
 
 
 def _build_service(llm: FakeSummaryLLM) -> tuple[WorkingMemory, RollingSummarizer, ChatService]:
@@ -104,7 +140,7 @@ async def _memories_of(db: object, ws_id: uuid.UUID) -> list[Memory]:
 
 async def test_compress_evicts_and_persists(small_budget: Settings) -> None:
     """滑出段并入摘要：rolling_summary 落库、窗口裁剪、episodic 条目出现。"""
-    db, ws_id, sid = await _prepare_session()
+    db, ws_id, _user_id, sid = await _prepare_session()
     try:
         wm, summarizer, _ = _build_service(FakeSummaryLLM(["用户与助手讨论了记忆压缩机制。"]))
         for i in range(4):  # 4 条 × 20 token = 80 token，窗口 40 只装得下 2 条
@@ -140,7 +176,7 @@ async def test_compress_evicts_and_persists(small_budget: Settings) -> None:
 
 async def test_cache_hit_skips_llm(small_budget: Settings) -> None:
     """窗口内无滑出段（缓存命中）：返回 False 且零 LLM 调用。"""
-    db, ws_id, sid = await _prepare_session()
+    db, ws_id, _user_id, sid = await _prepare_session()
     try:
         wm, summarizer, _ = _build_service(FakeSummaryLLM(["不应被调用"]))
         await wm.append(sid, role="user", content="你好")  # 单条远小于预算
@@ -157,7 +193,7 @@ async def test_cache_hit_skips_llm(small_budget: Settings) -> None:
 
 async def test_second_level_compress(small_budget: Settings) -> None:
     """摘要超出预算（50 token）时触发二级压缩，最终保存压缩版。"""
-    db, ws_id, sid = await _prepare_session()
+    db, ws_id, _user_id, sid = await _prepare_session()
     try:
         over_budget_summary = "压" * 100  # 100 token > 50
         compressed_summary = "压缩后的短摘要"
@@ -181,7 +217,7 @@ async def test_second_level_compress(small_budget: Settings) -> None:
 
 async def test_episodic_upsert_idempotent(small_budget: Settings) -> None:
     """二次压缩走 upsert：同 key 条目 version+1，事件流水 CREATED→UPDATED。"""
-    db, ws_id, sid = await _prepare_session()
+    db, ws_id, _user_id, sid = await _prepare_session()
     try:
         wm, summarizer, _ = _build_service(FakeSummaryLLM(["摘要版本一", "摘要版本二"]))
         for i in range(4):
@@ -220,14 +256,16 @@ async def test_episodic_upsert_idempotent(small_budget: Settings) -> None:
 
 async def test_hundred_rounds_context_bounded(small_budget: Settings) -> None:
     """DoD 验收：100 轮长对话后每轮上下文 token 有界且摘要持续沉淀。"""
-    db, ws_id, sid = await _prepare_session()
+    db, ws_id, user_id, sid = await _prepare_session()
     try:
         final_summary = "用户在长对话中持续讨论记忆压缩与上下文预算。"
         wm, summarizer, chat = _build_service(FakeSummaryLLM([final_summary]))
         for i in range(100):
             await wm.append(sid, role="user" if i % 2 == 0 else "assistant", content="话" * 15)
             await summarizer.maybe_compress(db, ws_id=ws_id, session_id=sid)
-            messages = await chat.context_messages(db, ws_id=ws_id, session_id=sid)
+            messages = await chat.context_messages(
+                db, ws_id=ws_id, user_id=user_id, session_id=sid, query="话" * 15
+            )
             total = sum(count_tokens(m["content"]) for m in messages)
             assert total <= _CONTEXT_TOKEN_CEILING, f"第 {i} 轮上下文超界: {total}"
 
@@ -235,9 +273,14 @@ async def test_hundred_rounds_context_bounded(small_budget: Settings) -> None:
         assert session is not None
         assert session.rolling_summary == final_summary
 
-        # 摘要以 system 前缀注入窗口之前（首条即摘要）
-        messages = await chat.context_messages(db, ws_id=ws_id, session_id=sid)
-        assert messages[0]["content"].startswith("[会话早期内容摘要]")
+        # 摘要以结构化标签注入合成 system 消息（M-05 渲染格式）
+        messages = await chat.context_messages(
+            db, ws_id=ws_id, user_id=user_id, session_id=sid, query="话" * 15
+        )
+        assert messages[0]["role"] == "system"
+        assert f'<summary source="session:{sid}">' in messages[0]["content"]
+        # 末条为窗口最新消息（第 100 轮 i=99 为 assistant，原文 role 保留）
+        assert messages[-1] == {"role": "assistant", "content": "话" * 15}
 
         # 压缩确实反复触发（version 自增），episodic 条目仍唯一
         memories = await _memories_of(db, ws_id)

@@ -56,6 +56,11 @@ services:
       # Embedding（M-04 记忆向量）：本地 infinity 服务（OpenAI 兼容 /embeddings）
       MEMORY_SERVICE_EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-http://embedding:7997}
       MEMORY_SERVICE_EMBEDDING_MODEL: ${EMBEDDING_MODEL:-/data/BAAI/bge-m3}
+      # 上下文预算 profile 目录（M-05）：容器内固定挂载于 /app/config/budgets
+      MEMORY_SERVICE_BUDGET_CONFIG_DIR: /app/config/budgets
+    volumes:
+      # 预算 YAML 只读挂载（config/budgets/*.yaml，修改需重启容器生效）
+      - ${CONFIG_DIR:-../config}:/app/config:ro
     ports:
       - "${MEMORY_SERVICE_PORT:-8100}:8100"
     depends_on:

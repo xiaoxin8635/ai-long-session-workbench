@@ -18,14 +18,13 @@ from collections.abc import AsyncIterator
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
-from app.core.deps import CurrentUser, DbDep, get_redis
-from app.core.errors import AppError, PermissionDeniedError
+from app.context.tokenizer import count_tokens
+from app.core.deps import CurrentUser, DbDep, get_redis, require_ws_member
+from app.core.errors import AppError
 from app.llm.client import LLMError, LLMNotConfigured, get_llm_client
 from app.memory.working_memory import WorkingMemory
-from app.repositories import workspace_repo
 from app.schemas.chat import ChatCompletionRequest, ChatMetadata, TaskCompletionRequest
 from app.services.chat_service import ChatService
-from app.services.token_counter import count_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -52,14 +51,7 @@ async def _require_member(metadata: ChatMetadata, user: CurrentUser, db: DbDep) 
         AppError: workspace_id 非法（422）。
         PermissionDeniedError: 非成员或 workspace 不存在（403，统一不区分）。
     """
-    try:
-        ws_id = uuid_mod.UUID(metadata.workspace_id)
-    except ValueError as exc:
-        raise AppError("invalid_metadata", 422, "metadata.workspace_id 非法") from exc
-    member = await workspace_repo.get_member(db, ws_id=ws_id, user_id=user.id)
-    if member is None:
-        raise PermissionDeniedError()
-    return ws_id
+    return await require_ws_member(metadata.workspace_id, user, db)
 
 
 @router.post(

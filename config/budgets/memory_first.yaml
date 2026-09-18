@@ -1,0 +1,20 @@
+# ============================================================
+# EchoDesk 上下文预算 profile：memory_first（A/B 实验组一）
+#
+# 策略：记忆优先——跨会话事实与偏好优先注入，RAG 让路。
+# 适用于纯对话型长会话（用户画像积累场景）。
+# ============================================================
+version: 1
+
+reserve_output: 0.10
+
+sections:
+  system: 0.05
+  procedural: 0.10
+  semantic: 0.25
+  episodic: 0.15
+  working: 0.30
+  rag: 0.10
+  tool_results: 0.05
+
+evict_order: [rag, episodic, semantic, working, procedural]

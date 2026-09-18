@@ -80,6 +80,8 @@ class Settings(BaseSettings):
 
     # ---- 上下文工程 ----
     context_budget_profile: str = "default"
+    # 预算 YAML 目录（M-05）；None 时自动探测 CWD/仓库根的 config/budgets
+    budget_config_dir: str | None = None
     # Working Memory 窗口 token 预算（M-05 Context Builder 接管前 M1/M-06 共用）
     context_window_tokens: int = 4000
     # 滚动摘要自身的 token 上限，超出触发二级压缩（M-06）

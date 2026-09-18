@@ -13,6 +13,7 @@ from uuid import uuid4
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.context.tokenizer import count_tokens
 from app.core.deps import get_redis
 from app.core.errors import ConflictError, NotFoundError
 from app.models.enums import SessionStatus
@@ -21,7 +22,6 @@ from app.models.user import User
 from app.repositories import memory_repo, message_repo, session_repo
 from app.schemas.message import MessageRead
 from app.schemas.session import MessageCreate, SessionDetail, SessionRead
-from app.services.token_counter import count_tokens
 
 # 会话默认标题（首条消息后由摘要命名，M-06 接管）
 _DEFAULT_TITLE = "新会话"
