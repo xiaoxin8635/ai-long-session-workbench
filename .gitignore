@@ -1,0 +1,64 @@
+# ============================================================
+# AI 长会话知识工作台 - Git 忽略规则
+# 原则：密钥与本地运行数据严禁入库
+# ============================================================
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# ===== 环境变量与密钥（严禁入库，只提交 .env.example）=====
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+secrets/
+
+# ===== Node / 前端 =====
+node_modules/
+.next/
+.nuxt/
+.svelte-kit/
+vite.config.ts.timestamp-*
+static/build/
+
+# ===== IDE / 编辑器 =====
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ===== 操作系统 =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== 本地运行数据（Docker 卷、数据库、上传文件）=====
+data/
+volumes/
+backups/
+uploads/
+*.log
+logs/
+*.sqlite3
+
+# ===== 评测与临时产物 =====
+evals/reports/local/
+tmp/
+.cache/

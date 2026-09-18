@@ -1,0 +1,27 @@
+# ============================================================
+# AI 长会话知识工作台 - 编辑器基础配置
+# 保证不同编辑器 / 系统下缩进、换行符、编码一致
+# ============================================================
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.py]
+indent_style = space
+indent_size = 4
+max_line_length = 100
+
+[*.{js,ts,tsx,jsx,json,yaml,yml,toml,html,css}]
+indent_style = space
+indent_size = 2
+
+# Markdown 保留行尾空格（换行语义）
+[*.md]
+trim_trailing_whitespace = false
+
+[Makefile]
+indent_style = tab
