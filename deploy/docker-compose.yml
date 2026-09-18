@@ -1,0 +1,95 @@
+# ============================================================
+# AI 长会话知识工作台 - 本地开发环境（M1 · Day 1）
+#
+# 服务清单：
+#   - postgres   业务数据库（会话/消息/记忆等结构化数据）
+#   - redis      工作记忆 / 缓存 / 分布式锁
+#   - open-webui 聊天工作台产品壳（后续二开区域）
+#
+# 使用方式：
+#   1. 复制 .env.example 为 .env 并填写真实密码（.env 已被 git 忽略）
+#   2. 在本目录执行 docker compose up -d
+#
+# 端口约定（见 CLAUDE.md）：Open WebUI 3000 / PostgreSQL 5432 / Redis 6379
+#
+# 说明：memory-service（Day 2 起）、Milvus、Langfuse 将在后续里程碑加入本文件
+# ============================================================
+
+name: ai-long-workbench
+
+networks:
+  workbench-net:
+    driver: bridge
+
+volumes:
+  openwebui-data:
+  postgres-data:
+  redis-data:
+
+services:
+  # ---------- PostgreSQL：业务数据库 ----------
+  postgres:
+    # 采用官方 postgres 镜像 + pgvector 扩展的版本：
+    # 为技术栈中"向量库 pgvector 起步"的备选项预留能力，避免未来切换时重建数据卷
+    image: pgvector/pgvector:pg16
+    container_name: workbench-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-workbench}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在 deploy/.env 中设置 POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-workbench}
+      TZ: Asia/Shanghai
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - workbench-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-workbench} -d ${POSTGRES_DB:-workbench}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ---------- Redis：工作记忆 / 缓存 ----------
+  redis:
+    image: redis:7-alpine
+    container_name: workbench-redis
+    restart: unless-stopped
+    # 开启 AOF 持久化，重启后工作记忆窗口不丢失
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - workbench-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------- Open WebUI：工作台产品壳 ----------
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: workbench-openwebui
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      # 启用用户体系：多用户 / workspace 隔离的基础
+      WEBUI_AUTH: "True"
+      # 数据目录（挂载到命名卷，升级镜像不丢数据）
+      DATA_DIR: /app/backend/data
+      # 【预留】Day 3 起 memory-service 就绪后，通过 Pipe 对接自研服务；
+      # 如后续希望 Open WebUI 自身也用 PostgreSQL 存储，可启用：
+      # DATABASE_URL: postgresql://${POSTGRES_USER:-workbench}:${POSTGRES_PASSWORD}@postgres:5432/openwebui
+    ports:
+      - "${OPENWEBUI_PORT:-3000}:8080"
+    volumes:
+      - openwebui-data:/app/backend/data
+    networks:
+      - workbench-net
+    # 注意：Open WebUI 当前不直连 postgres/redis（自带 SQLite），
+    # 未来 memory-service 加入后由它声明 depends_on，Open WebUI 经 Pipe 调用 memory-service
