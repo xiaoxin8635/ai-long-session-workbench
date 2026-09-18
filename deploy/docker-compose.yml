@@ -1,18 +1,22 @@
 # ============================================================
-# AI 长会话知识工作台 - 本地开发环境（M1 · Day 1）
+# AI 长会话知识工作台 - 本地开发环境
 #
 # 服务清单：
-#   - postgres   业务数据库（会话/消息/记忆等结构化数据）
-#   - redis      工作记忆 / 缓存 / 分布式锁
-#   - open-webui 聊天工作台产品壳（后续二开区域）
+#   - open-webui      聊天工作台产品壳（后续二开区域）
+#   - memory-service  自研核心服务（四层记忆 / 上下文组装 / Agent Runtime）
+#   - postgres        业务数据库（会话/消息/记忆等结构化数据）
+#   - redis           工作记忆 / 缓存 / 分布式锁
 #
 # 使用方式：
 #   1. 复制 .env.example 为 .env 并填写真实密码（.env 已被 git 忽略）
-#   2. 在本目录执行 docker compose up -d
+#   2. 在本目录执行 docker compose up -d --build
+#   3. 首次启动后执行数据库迁移：
+#      docker exec workbench-memory alembic upgrade head
 #
-# 端口约定（见 CLAUDE.md）：Open WebUI 3000 / PostgreSQL 5432 / Redis 6379
+# 端口约定（见 CLAUDE.md）：Open WebUI 3000 / memory-service 8100
+#                          / PostgreSQL 5432 / Redis 6379
 #
-# 说明：memory-service（Day 2 起）、Milvus、Langfuse 将在后续里程碑加入本文件
+# 说明：Milvus、Langfuse 将在后续里程碑加入本文件
 # ============================================================
 
 name: ai-long-workbench
@@ -27,6 +31,31 @@ volumes:
   redis-data:
 
 services:
+  # ---------- memory-service：自研核心服务（FastAPI） ----------
+  memory-service:
+    build:
+      context: ../services/memory-service
+      args:
+        # 国内网络构建加速：清华 PyPI 镜像（海外环境可改回官方源）
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+    container_name: workbench-memory
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      MEMORY_SERVICE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-workbench}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-workbench}
+      MEMORY_SERVICE_REDIS_URL: redis://redis:6379/0
+      # JWT 密钥：在 deploy/.env 中设置（与 POSTGRES_PASSWORD 一同管理）
+      MEMORY_SERVICE_JWT_SECRET: ${MEMORY_JWT_SECRET:-change-me-in-env}
+      MEMORY_SERVICE_LOG_LEVEL: INFO
+    ports:
+      - "${MEMORY_SERVICE_PORT:-8100}:8100"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - workbench-net
   # ---------- PostgreSQL：业务数据库 ----------
   postgres:
     # 采用官方 postgres 镜像 + pgvector 扩展的版本：
