@@ -54,6 +54,8 @@ class Settings(BaseSettings):
     llm_model: str | None = None
     extractor_model: str | None = None
     embedding_model: str = "BAAI/bge-m3"
+    llm_timeout_seconds: float = 60.0  # 单次 LLM 调用超时（含流式整体）
+    llm_max_retries: int = 1  # 上游 5xx/网络错误重试次数
 
     # ---- 向量库 ----
     vector_store: str = "pgvector"

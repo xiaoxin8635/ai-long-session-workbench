@@ -8,7 +8,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import auth, health, sessions, workspaces
+from app.api.routes import auth, chat, health, sessions, workspaces
 from app.core.config import get_settings
 from app.core.errors import AppError, app_error_handler
 from app.core.logging import setup_logging
@@ -53,6 +53,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(workspaces.router)
     app.include_router(sessions.router)
+    app.include_router(chat.router)
 
     return app
 

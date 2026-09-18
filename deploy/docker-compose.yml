@@ -47,6 +47,10 @@ services:
       # JWT 密钥：在 deploy/.env 中设置（与 POSTGRES_PASSWORD 一同管理）
       MEMORY_SERVICE_JWT_SECRET: ${MEMORY_JWT_SECRET:-change-me-in-env}
       MEMORY_SERVICE_LOG_LEVEL: INFO
+      # LLM（M-08 Chat 端点）：OpenAI 兼容服务，在 deploy/.env 中配置
+      MEMORY_SERVICE_LLM_BASE_URL: ${LLM_BASE_URL:-}
+      MEMORY_SERVICE_LLM_API_KEY: ${LLM_API_KEY:-}
+      MEMORY_SERVICE_LLM_MODEL: ${LLM_MODEL:-}
     ports:
       - "${MEMORY_SERVICE_PORT:-8100}:8100"
     depends_on:
