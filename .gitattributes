@@ -1,0 +1,40 @@
+# ============================================================
+# AI 长会话知识工作台 - Git 属性配置
+# 统一换行符为 LF，保证跨平台（Windows 开发 / GitHub / CI）一致
+# 与 .editorconfig 中 end_of_line = lf 保持对应
+# ============================================================
+
+# 文本文件统一 LF
+* text=auto eol=lf
+
+# 明确的文本类型
+*.py     text eol=lf
+*.md     text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
+*.json   text eol=lf
+*.toml   text eol=lf
+*.cfg    text eol=lf
+*.ini    text eol=lf
+*.sh     text eol=lf
+*.js     text eol=lf
+*.ts     text eol=lf
+*.css    text eol=lf
+*.html   text eol=lf
+.env.example text eol=lf
+
+# Windows 专用脚本保留 CRLF
+*.bat    text eol=crlf
+*.ps1    text eol=crlf
+
+# 二进制文件不做换行转换
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.ico    binary
+*.pdf    binary
+*.docx   binary
+*.xlsx   binary
+*.sqlite3 binary
+*.pkl    binary
