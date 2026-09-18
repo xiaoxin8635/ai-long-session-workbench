@@ -67,6 +67,10 @@ class Settings(BaseSettings):
 
     # ---- 上下文工程 ----
     context_budget_profile: str = "default"
+    # Working Memory 窗口 token 预算（M-05 Context Builder 接管前 M1/M-06 共用）
+    context_window_tokens: int = 4000
+    # 滚动摘要自身的 token 上限，超出触发二级压缩（M-06）
+    rolling_summary_max_tokens: int = 800
 
     @property
     def sync_database_url(self) -> str:

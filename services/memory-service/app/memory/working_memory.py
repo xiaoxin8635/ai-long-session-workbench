@@ -75,3 +75,35 @@ class WorkingMemory:
                 break
         entries.reverse()  # 恢复时间正序
         return entries
+
+    async def all_entries(self, session_id: uuid.UUID) -> list[dict[str, Any]]:
+        """取窗口内全部消息（时间正序，不做 token 截断）。
+
+        RollingSummarizer 用它与 window() 的差集识别"滑出段"。
+
+        Args:
+            session_id: 目标会话。
+        """
+        raw = await self._redis.lrange(self._key(session_id), 0, -1)
+        entries: list[dict[str, Any]] = []
+        for item in raw:  # list 本身即时间正序（rpush 追加）
+            try:
+                entries.append(json.loads(item))
+            except json.JSONDecodeError:
+                logger.warning("working_memory_skip_corrupted session=%s", session_id)
+        return entries
+
+    async def trim_to_keep(self, session_id: uuid.UUID, keep: int) -> None:
+        """只保留最近 keep 条消息（滑出段已并入摘要后裁剪，防重复摘要）。
+
+        Args:
+            session_id: 目标会话。
+            keep: 保留的尾部条数（window() 返回的窗口长度）。
+        """
+        if keep <= 0:
+            return
+        key = self._key(session_id)
+        async with self._redis.pipeline(transaction=False) as pipe:
+            pipe.ltrim(key, -keep, -1)
+            pipe.expire(key, _TTL_SECONDS)
+            await pipe.execute()
