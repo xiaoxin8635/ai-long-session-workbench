@@ -126,7 +126,7 @@ class ChatService:
         await self._wm.append(session_id, role=user_msg.role, content=user_msg.content)
         return message.id
 
-    async def _build_context(
+    async def assemble(
         self,
         db: AsyncSession,
         *,
@@ -135,7 +135,7 @@ class ChatService:
         session_id: uuid.UUID,
         query: str,
     ) -> AssembledContext:
-        """M-05 ContextBuilder 装配（stream/complete 共用；sections 供用量统计）。"""
+        """M-05 ContextBuilder 装配（公开供路由层取 citations；sections 供用量统计）。"""
         return await self._context_builder.build(
             db, ws_id=ws_id, user_id=user_id, session_id=session_id, query=query
         )
@@ -154,7 +154,7 @@ class ChatService:
         system（含记忆标签/摘要/知识注入）+ Working Memory 窗口，
         按区块预算裁剪；当前用户问题作为长期记忆检索的 query。
         """
-        assembled = await self._build_context(
+        assembled = await self.assemble(
             db, ws_id=ws_id, user_id=user_id, session_id=session_id, query=query
         )
         return assembled.messages
@@ -227,15 +227,21 @@ class ChatService:
         session_id: uuid.UUID,
         payload: ChatCompletionRequest,
         user_msg_id: uuid.UUID,
+        assembled: AssembledContext | None = None,
     ) -> AsyncIterator[str]:
-        """流式生成并逐段产出文本；结束后统一落库并触发用量/压缩/抽取。"""
-        assembled = await self._build_context(
-            db,
-            ws_id=ws_id,
-            user_id=user_id,
-            session_id=session_id,
-            query=payload.messages[-1].content,
-        )
+        """流式生成并逐段产出文本；结束后统一落库并触发用量/压缩/抽取。
+
+        Args:
+            assembled: 路由层预装配的上下文（透传避免重复检索）；None 时内部装配。
+        """
+        if assembled is None:
+            assembled = await self.assemble(
+                db,
+                ws_id=ws_id,
+                user_id=user_id,
+                session_id=session_id,
+                query=payload.messages[-1].content,
+            )
         chunks: list[str] = []
         async for delta in self._llm.stream_chat(assembled.messages):
             chunks.append(delta)
@@ -260,15 +266,21 @@ class ChatService:
         session_id: uuid.UUID,
         payload: ChatCompletionRequest,
         user_msg_id: uuid.UUID,
+        assembled: AssembledContext | None = None,
     ) -> str:
-        """非流式生成；返回完整回答（落库在内部完成）。"""
-        assembled = await self._build_context(
-            db,
-            ws_id=ws_id,
-            user_id=user_id,
-            session_id=session_id,
-            query=payload.messages[-1].content,
-        )
+        """非流式生成；返回完整回答（落库在内部完成）。
+
+        Args:
+            assembled: 路由层预装配的上下文（透传避免重复检索）；None 时内部装配。
+        """
+        if assembled is None:
+            assembled = await self.assemble(
+                db,
+                ws_id=ws_id,
+                user_id=user_id,
+                session_id=session_id,
+                query=payload.messages[-1].content,
+            )
         answer, usage = await self._llm.complete(assembled.messages)
         await self.finalize(
             db,

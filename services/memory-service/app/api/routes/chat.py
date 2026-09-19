@@ -24,6 +24,7 @@ from app.core.errors import AppError
 from app.llm.client import LLMError, LLMNotConfigured, get_llm_client
 from app.memory.working_memory import WorkingMemory
 from app.schemas.chat import ChatCompletionRequest, ChatMetadata, TaskCompletionRequest
+from app.schemas.knowledge import Citation
 from app.services.chat_service import ChatService
 
 logger = logging.getLogger(__name__)
@@ -76,10 +77,14 @@ async def chat_completions(payload: ChatCompletionRequest, user: CurrentUser, db
 
     completion_id = f"chatcmpl-{uuid_mod.uuid4().hex}"
     created = int(time.time())
+    query = payload.messages[-1].content
 
     # ---- 非流式 ----
     if not payload.stream:
         try:
+            assembled = await service.assemble(
+                db, ws_id=ws_id, user_id=user.id, session_id=session_id, query=query
+            )
             answer = await service.complete_answer(
                 db,
                 ws_id=ws_id,
@@ -87,16 +92,21 @@ async def chat_completions(payload: ChatCompletionRequest, user: CurrentUser, db
                 session_id=session_id,
                 payload=payload,
                 user_msg_id=user_msg_id,
+                assembled=assembled,
             )
         except LLMError as exc:
             raise AppError("llm_upstream_error", 502, str(exc)) from exc
-        return _non_stream_response(completion_id, created, answer, session_id)
+        return _non_stream_response(completion_id, created, answer, session_id, assembled.citations)
 
     # ---- 流式（SSE）----
     async def event_stream() -> AsyncIterator[str]:
         answer_parts: list[str] = []
         first_chunk = True
         try:
+            # 装配在生成器内执行（依赖请求级 db 会话，随响应流生命周期存活）
+            assembled = await service.assemble(
+                db, ws_id=ws_id, user_id=user.id, session_id=session_id, query=query
+            )
             async for delta_text in service.stream_answer(
                 db,
                 ws_id=ws_id,
@@ -104,6 +114,7 @@ async def chat_completions(payload: ChatCompletionRequest, user: CurrentUser, db
                 session_id=session_id,
                 payload=payload,
                 user_msg_id=user_msg_id,
+                assembled=assembled,
             ):
                 answer_parts.append(delta_text)
                 chunk: dict = {
@@ -118,13 +129,18 @@ async def chat_completions(payload: ChatCompletionRequest, user: CurrentUser, db
                     chunk["metadata"] = {"session_id": str(session_id)}
                     first_chunk = False
                 yield _sse(chunk)
+            finish_metadata: dict = {"session_id": str(session_id)}
+            if assembled.citations:
+                finish_metadata["citations"] = [
+                    c.model_dump() for c in _citations(assembled.citations)
+                ]
             yield _sse(
                 {
                     "id": completion_id,
                     "object": "chat.completion.chunk",
                     "created": created,
                     "model": "echodesk",
-                    "metadata": {"session_id": str(session_id)},
+                    "metadata": finish_metadata,
                     "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
                     "usage": {
                         "completion_tokens": count_tokens("".join(answer_parts)),
@@ -140,14 +156,28 @@ async def chat_completions(payload: ChatCompletionRequest, user: CurrentUser, db
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
-def _non_stream_response(completion_id: str, created: int, answer: str, session_id: str) -> dict:
-    """构造非流式 OpenAI 响应体（metadata.session_id 供客户端延续会话）。"""
+def _citations(cited_chunks: tuple) -> list[Citation]:
+    """装配结果 RAG 引用 → API 模型（M-07 metadata.citations）。"""
+    return [Citation.from_cited(cited) for cited in cited_chunks]
+
+
+def _non_stream_response(
+    completion_id: str,
+    created: int,
+    answer: str,
+    session_id: str,
+    citations: tuple = (),
+) -> dict:
+    """构造非流式 OpenAI 响应体（metadata：session_id + RAG 引用）。"""
+    metadata: dict = {"session_id": str(session_id)}
+    if citations:
+        metadata["citations"] = [c.model_dump() for c in _citations(citations)]
     return {
         "id": completion_id,
         "object": "chat.completion",
         "created": created,
         "model": "echodesk",
-        "metadata": {"session_id": str(session_id)},
+        "metadata": metadata,
         "choices": [
             {
                 "index": 0,

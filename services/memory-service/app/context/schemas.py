@@ -88,8 +88,11 @@ class AssembledContext:
         messages: OpenAI 格式消息列表（一条合成 system + working 的 role 消息）。
         sections: 各区块用量（装配顺序）。
         total_tokens: 全部区块 token 总和。
+        citations: 真正装入 RAG 区块的引用元组（M-07；元素为 rag.schemas.CitedChunk，
+            供 chat 路由组装 metadata.citations，宽类型避免 context 层反向依赖 rag 层）。
     """
 
     messages: list[dict[str, str]] = field(default_factory=list)
     sections: tuple[SectionUsage, ...] = ()
     total_tokens: int = 0
+    citations: tuple = ()

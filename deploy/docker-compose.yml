@@ -55,7 +55,10 @@ services:
       MEMORY_SERVICE_EXTRACTOR_MODEL: ${EXTRACTOR_MODEL:-}
       # Embedding（M-04 记忆向量）：本地 infinity 服务（OpenAI 兼容 /embeddings）
       MEMORY_SERVICE_EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-http://embedding:7997}
-      MEMORY_SERVICE_EMBEDDING_MODEL: ${EMBEDDING_MODEL:-/data/BAAI/bge-m3}
+      # 模型名用 infinity 注册名（repo id）而非挂载路径：--model-id 为路径时
+      # infinity 会规范化注册为 basename（/data/BAAI/bge-m3 → BAAI/bge-m3），
+      # 用路径请求会 400（曾导致向量路静默降级为 BM25-only）
+      MEMORY_SERVICE_EMBEDDING_MODEL: ${EMBEDDING_MODEL:-BAAI/bge-m3}
       # 上下文预算 profile 目录（M-05）：容器内固定挂载于 /app/config/budgets
       MEMORY_SERVICE_BUDGET_CONFIG_DIR: /app/config/budgets
     volumes:
@@ -71,15 +74,16 @@ services:
     networks:
       - workbench-net
 
-  # ---------- embedding：bge-m3 向量服务（infinity） ----------
-  # 挂载宿主机 modelscope 模型目录；OpenAI 兼容 /embeddings 端点。
-  # memory-service 对 embedding 不可用自带降级（无向量入库/检索返回空），
-  # 故不设 healthcheck 硬依赖；M-07 可在此追加 reranker 模型暴露 /rerank。
+  # ---------- embedding：bge-m3 向量 + bge-reranker 重排（infinity） ----------
+  # 挂载宿主机 modelscope 模型目录；OpenAI 兼容 /embeddings 与 /rerank 端点，
+  # 按 body.model 路由到对应模型。memory-service 对 embedding/rerank 不可用
+  # 自带降级（无向量入库 / 检索返回空 / RRF 分数直排），故不设 healthcheck 硬依赖。
   embedding:
     image: michaelf34/infinity:latest
     container_name: workbench-embedding
     restart: unless-stopped
-    command: ["v2", "--model-id", "/data/BAAI/bge-m3", "--port", "7997"]
+    command:
+      ["v2", "--model-id", "/data/BAAI/bge-m3", "--model-id", "/data/rerank/BAAI/bge-reranker-large", "--port", "7997"]
     volumes:
       - ${EMBEDDING_MODELS_DIR:-D:\ai_models\modelscope_cache\models}:/data:ro
     ports:

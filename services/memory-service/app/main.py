@@ -13,6 +13,7 @@ from app.api.routes import (
     chat,
     context_debug,
     health,
+    knowledge,
     memories,
     sessions,
     usage,
@@ -66,6 +67,7 @@ def create_app() -> FastAPI:
     app.include_router(context_debug.router)
     app.include_router(memories.router)
     app.include_router(usage.router)
+    app.include_router(knowledge.router)
 
     return app
 

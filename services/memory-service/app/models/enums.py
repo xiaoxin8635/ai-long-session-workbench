@@ -69,11 +69,15 @@ class MemoryEventSource(StrEnum):
 
 
 class KnowledgeFileStatus(StrEnum):
-    """知识库文件摄取状态机。"""
+    """知识库文件摄取状态机。
+
+    SUPERSEDED：同名重传后被新版本替代（旧版向量已下线、文本保留可追溯）。
+    """
 
     PARSING = "parsing"
     EMBEDDED = "embedded"
     FAILED = "failed"
+    SUPERSEDED = "superseded"
 
 
 class TaskStatus(StrEnum):

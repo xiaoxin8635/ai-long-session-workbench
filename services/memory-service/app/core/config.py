@@ -64,6 +64,19 @@ class Settings(BaseSettings):
     embedding_max_retries: int = 1
     embedding_dim: int = 1024  # bge-m3 dense 维度（与模型解耦的部署约定）
 
+    # ---- Rerank（M-07 RAG 精排；infinity /rerank，不可用降级 RRF 直排）----
+    rerank_base_url: str | None = None  # None 时复用 embedding_base_url
+    rerank_model: str = "BAAI/bge-reranker-large"  # infinity 注册名（路径式名会被 400 拒绝）
+    rerank_timeout_seconds: float = 30.0
+    rerank_max_retries: int = 1
+
+    # ---- RAG 知识库（M-07）----
+    rag_chunk_tokens: int = 512  # 切片目标 token 数
+    rag_chunk_overlap_ratio: float = 0.1  # 相邻切片重叠比例（10%）
+    rag_candidate_k: int = 40  # 向量/BM25 各路召回候选数（融合前）
+    rag_top_k: int = 6  # 最终注入 RAG 区块的片段数
+    rag_max_upload_mb: int = 20  # 单文件上传上限（MB）
+
     # ---- 记忆抽取/检索（M-04）----
     extract_min_confidence: float = 0.5  # 低于该置信度的抽取结果丢弃（控噪）
     dedup_similarity_threshold: float = 0.92  # 向量相似度判重阈值

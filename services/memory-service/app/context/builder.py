@@ -13,6 +13,7 @@
 
 import logging
 import uuid
+from dataclasses import replace
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,9 +28,12 @@ from app.context.schemas import (
 )
 from app.context.tokenizer import count_tokens
 from app.llm.embeddings import EmbeddingError, get_embedding_client
+from app.llm.rerank import get_rerank_client
 from app.memory.retriever import MemoryRetriever
 from app.memory.working_memory import WorkingMemory
 from app.models.enums import MemoryType
+from app.rag.retriever import KnowledgeRetriever
+from app.rag.schemas import CitedChunk
 from app.repositories import memory_repo, session_repo
 
 logger = logging.getLogger(__name__)
@@ -73,16 +77,22 @@ class ContextBuilder:
     """上下文装配器：候选裁剪 + 结构化渲染 + 高层取数编排。"""
 
     def __init__(
-        self, working_memory: WorkingMemory, retriever: MemoryRetriever | None = None
+        self,
+        working_memory: WorkingMemory,
+        retriever: MemoryRetriever | None = None,
+        knowledge: KnowledgeRetriever | None = None,
     ) -> None:
-        """注入 Working Memory 与记忆检索器。
+        """注入 Working Memory 与两个检索器。
 
         Args:
             working_memory: 会话消息窗口（working 区块数据源）。
             retriever: 长期记忆检索器；None 表示检索不可用（降级为摘要+窗口）。
+            knowledge: RAG 知识检索器（M-07）；None 表示知识库未接入
+                （RAG 区块恒空，测试隔离用）。
         """
         self._wm = working_memory
         self._retriever = retriever
+        self._knowledge = knowledge
 
     # ---- 纯函数装配（单测主战场，不依赖任何外部状态） ----
 
@@ -345,6 +355,23 @@ class ContextBuilder:
                 )
         buckets[SectionKey.EPISODIC].extend(episodic)
 
+        # ②.5 RAG 知识检索（M-07；不可用降级为空，主对话不受影响）
+        rag_hits: list[CitedChunk] = []
+        if self._knowledge is not None and query:
+            try:
+                rag_hits = await self._knowledge.search(db, ws_id=ws_id, query=query)
+            except Exception as exc:
+                logger.warning("context_rag_degraded error=%s", exc)
+                rag_hits = []
+        for cited in rag_hits:
+            buckets[SectionKey.RAG].append(
+                ContextItem(
+                    content=cited.content,
+                    source=rag_source(cited),
+                    score=cited.score,
+                )
+            )
+
         # ③ Working Memory 窗口（按 working 预算截断）
         working = await self._wm.window(session_id, budget.sections[SectionKey.WORKING])
 
@@ -357,11 +384,24 @@ class ContextBuilder:
             rag=tuple(buckets[SectionKey.RAG]),
             tool_results=tuple(buckets[SectionKey.TOOL_RESULTS]),
         )
-        return ContextBuilder.assemble(candidates, budget)
+        assembled = ContextBuilder.assemble(candidates, budget)
+        # citations 只保留真正装入 RAG 区块的命中（预算裁剪后不引用未注入内容；
+        # _pack_scored 为纯函数，同输入重放即可还原装配时的取舍）
+        kept_sources = {
+            item.source
+            for item in ContextBuilder._pack_scored(candidates.rag, budget.sections[SectionKey.RAG])
+        }
+        citations = tuple(cited for cited in rag_hits if rag_source(cited) in kept_sources)
+        return replace(assembled, citations=citations)
+
+
+def rag_source(cited: CitedChunk) -> str:
+    """构造 RAG 命中的溯源标记（注入 <knowledge source=...> 与 citations 对齐）。"""
+    return f"knowledge:{cited.filename}#chunk{cited.chunk_index}"
 
 
 def default_builder(working_memory: WorkingMemory) -> ContextBuilder:
-    """构造默认装配器（embedding 未配置时检索禁用，降级为摘要+窗口）。
+    """构造默认装配器（embedding 未配置时记忆检索禁用，降级为摘要+窗口）。
 
     Args:
         working_memory: Working Memory 窗口实例。
@@ -370,8 +410,15 @@ def default_builder(working_memory: WorkingMemory) -> ContextBuilder:
         可直接用于对话链路 / preview 端点的 ContextBuilder。
     """
     try:
-        retriever = MemoryRetriever(get_embedding_client())
+        embedding_client = get_embedding_client()
     except Exception:  # EmbeddingError：未配置属正常部署形态，仅记提示
-        logger.info("context_retriever_disabled_embedding_not_configured")
-        retriever = None
-    return ContextBuilder(working_memory, retriever)
+        logger.info("context_embedding_not_configured")
+        embedding_client = None
+    retriever = MemoryRetriever(embedding_client) if embedding_client is not None else None
+    try:
+        rerank_client = get_rerank_client()
+    except Exception:  # RerankError：未配置降级 RRF 直排
+        rerank_client = None
+    # BM25 不依赖外部服务，知识检索恒启用（向量/rerank 各自按可用性降级）
+    knowledge = KnowledgeRetriever(embedding=embedding_client, rerank=rerank_client)
+    return ContextBuilder(working_memory, retriever, knowledge)

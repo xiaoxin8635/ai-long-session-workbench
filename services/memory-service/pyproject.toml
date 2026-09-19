@@ -22,6 +22,11 @@ dependencies = [
     "httpx>=0.27",           # LLM OpenAI 兼容客户端（M-08）
     "pgvector>=0.3",         # pgvector SQLAlchemy 类型（M-04 记忆向量）
     "pyyaml>=6.0",           # 上下文预算 profile 加载（M-05 config/budgets/*.yaml）
+    "pypdf>=4.0",            # RAG 知识库 PDF 解析（M-07）
+    "python-docx>=1.1",      # RAG 知识库 DOCX 解析（M-07）
+    "jieba>=0.42",           # RAG 中文分词（M-07 BM25 索引侧）
+    "rank-bm25>=0.2",        # RAG BM25 关键词召回路（M-07）
+    "python-multipart>=0.0.9", # FastAPI multipart 文件上传解析（M-07 知识库）
 ]
 
 [dependency-groups]
