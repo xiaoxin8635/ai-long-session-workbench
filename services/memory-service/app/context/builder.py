@@ -3,12 +3,13 @@
 两层职责：
   - assemble()：纯函数装配——各区块内按策略裁剪 → 全局按 evict_order 防线
     → 渲染为 OpenAI messages（一条合成 system + working 原文消息）
-  - build()：高层取数编排——滚动摘要 + M-04 记忆检索 + Working Memory 窗口
-    汇成候选集后调用 assemble；检索不可用自动降级为"摘要 + 窗口"。
+  - build()：高层取数编排——滚动摘要 + M-04 记忆检索 + M-10 任务简报 +
+    M-07 RAG 检索 + Working Memory 窗口汇成候选集后调用 assemble；
+    各取数源独立降级，任一失败不阻断装配。
 
 装配顺序固定（docs/01 §5.3 要点 2）：
-  system → procedural(偏好) → semantic(事实) → episodic(摘要) → working(近期)
-  → rag(知识) → tool_results(工具结果)
+  system → procedural(偏好) → semantic(事实+任务简报) → episodic(摘要)
+  → working(近期) → rag(知识) → tool_results(工具结果)
 """
 
 import logging
@@ -27,14 +28,15 @@ from app.context.schemas import (
     SectionUsage,
 )
 from app.context.tokenizer import count_tokens
+from app.core.config import get_settings
 from app.llm.embeddings import EmbeddingError, get_embedding_client
 from app.llm.rerank import get_rerank_client
 from app.memory.retriever import MemoryRetriever
 from app.memory.working_memory import WorkingMemory
-from app.models.enums import MemoryType
+from app.models.enums import MemoryType, TaskStatus
 from app.rag.retriever import KnowledgeRetriever
 from app.rag.schemas import CitedChunk
-from app.repositories import memory_repo, session_repo
+from app.repositories import memory_repo, session_repo, task_repo
 
 logger = logging.getLogger(__name__)
 
@@ -354,6 +356,25 @@ class ContextBuilder:
                     )
                 )
         buckets[SectionKey.EPISODIC].extend(episodic)
+
+        # ②.2 任务简报（M-10 Task Continuity）：未完成任务以高优先级语义
+        # 候选注入（高优先在前），预算/裁剪与去重天然复用 semantic 桶管线
+        try:
+            for task in await task_repo.unfinished_brief(
+                db, ws_id=ws_id, limit=get_settings().task_brief_limit
+            ):
+                buckets[SectionKey.SEMANTIC].append(
+                    ContextItem(
+                        content=(
+                            f"未完成任务「{task.title}」（状态 {TaskStatus(task.status).value}，"
+                            f"优先级 {task.priority}）"
+                        ),
+                        source=f"task:{task.id}",
+                        score=0.95,
+                    )
+                )
+        except Exception as exc:  # 任务简报失败不阻断装配（与检索降级同口径）
+            logger.warning("context_task_brief_degraded error=%s", exc)
 
         # ②.5 RAG 知识检索（M-07；不可用降级为空，主对话不受影响）
         rag_hits: list[CitedChunk] = []

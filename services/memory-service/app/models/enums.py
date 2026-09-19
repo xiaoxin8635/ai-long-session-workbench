@@ -100,6 +100,7 @@ class ToolRiskLevel(StrEnum):
 class ToolCallStatus(StrEnum):
     """工具调用结果状态。"""
 
+    PENDING = "pending"  # external 风险等待用户确认
     SUCCESS = "success"
     DENIED = "denied"  # 用户拒绝确认
     TIMEOUT = "timeout"  # 确认等待超时

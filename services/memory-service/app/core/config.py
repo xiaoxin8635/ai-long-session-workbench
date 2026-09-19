@@ -77,6 +77,16 @@ class Settings(BaseSettings):
     rag_top_k: int = 6  # 最终注入 RAG 区块的片段数
     rag_max_upload_mb: int = 20  # 单文件上传上限（MB）
 
+    # ---- 工具调用（M-09）----
+    tool_confirm_timeout_seconds: float = 60.0  # external 风险确认等待窗口（超时拒绝）
+    tool_result_max_chars: int = 2000  # 工具结果摘要化上限（超出截断标注）
+    web_fetch_timeout_seconds: float = 15.0  # web.fetch 单次抓取超时
+    web_fetch_max_bytes: int = 524288  # web.fetch 响应体上限（512KB，防超大页面）
+
+    # ---- 任务与待办（M-10）----
+    task_brief_limit: int = 5  # 新会话开场注入的未完成任务条数上限
+    task_progress_ttl_days: int = 30  # 任务进度记忆 TTL（docs/01 §5.7：进度类事实 30 天）
+
     # ---- 记忆抽取/检索（M-04）----
     extract_min_confidence: float = 0.5  # 低于该置信度的抽取结果丢弃（控噪）
     dedup_similarity_threshold: float = 0.92  # 向量相似度判重阈值

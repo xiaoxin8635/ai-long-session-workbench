@@ -1,11 +1,12 @@
 """memory 仓储（M-03 级联归档；M-06 滚动摘要 episodic upsert；M-04 抽取/检索管线；
-M-11 记忆面板管理：列表过滤/版本链/用户编辑/软删除/冲突裁决）。
+M-11 记忆面板管理：列表过滤/版本链/用户编辑/软删除/冲突裁决；
+M-10 任务进度 semantic upsert——job.*.progress，Task Continuity 记忆侧）。
 
 抽取管线（去重/冲突/入库）、检索管线与管理面板的全部数据访问收口在此。
 """
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import case, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -119,6 +120,80 @@ async def upsert_episodic_summary(
         return memory
     existing.content = content
     existing.status = MemoryStatus.ACTIVE
+    existing.version += 1
+    await db.flush()
+    await _add_event(
+        db,
+        existing.id,
+        MemoryEventType.UPDATED,
+        new_value=content,
+        source=MemoryEventSource.SYSTEM,
+    )
+    return existing
+
+
+def task_progress_key(task_id: uuid.UUID) -> str:
+    """任务进度记忆的结构化主题键（docs/01 §5.7：job.*.progress）。"""
+    return f"job:{task_id}.progress"
+
+
+async def upsert_task_progress(
+    db: AsyncSession,
+    *,
+    ws_id: uuid.UUID,
+    user_id: uuid.UUID,
+    task_id: uuid.UUID,
+    content: str,
+    ttl_days: int,
+) -> Memory:
+    """写入/更新任务进度的 semantic 记忆条目（M-10，幂等版本链增）。
+
+    按 (workspace_id, key=job:<task_id>.progress) 查找：存在则更新内容并
+    version+1、状态回 ACTIVE、TTL 顺延（活跃任务不过期）；不存在则创建。
+    同时写 memory_events 流水（source=SYSTEM，区别于 LLM 抽取）。
+    向量补齐由调用方（TaskService）尽力刷新，本函数只管数据形态。
+
+    Args:
+        db: 数据库会话。
+        ws_id: 所属 workspace。
+        user_id: 任务操作者（memories.user_id 非空，进度记忆归属该用户）。
+        task_id: 任务 ID（key 的一部分）。
+        content: 进度描述全文。
+        ttl_days: TTL 天数（进度类事实默认 30 天）。
+
+    Returns:
+        落库后的 Memory 对象。
+    """
+    key = task_progress_key(task_id)
+    expires_at = datetime.now(UTC) + timedelta(days=ttl_days)
+    existing = (
+        await db.execute(select(Memory).where(Memory.workspace_id == ws_id, Memory.key == key))
+    ).scalar_one_or_none()
+    if existing is None:
+        memory = Memory(
+            workspace_id=ws_id,
+            user_id=user_id,
+            memory_type=MemoryType.SEMANTIC,
+            key=key,
+            content=content,
+            confidence=0.9,
+            importance=0.8,
+            expires_at=expires_at,
+            status=MemoryStatus.ACTIVE,
+        )
+        db.add(memory)
+        await db.flush()
+        await _add_event(
+            db,
+            memory.id,
+            MemoryEventType.CREATED,
+            new_value=content,
+            source=MemoryEventSource.SYSTEM,
+        )
+        return memory
+    existing.content = content
+    existing.status = MemoryStatus.ACTIVE
+    existing.expires_at = expires_at
     existing.version += 1
     await db.flush()
     await _add_event(

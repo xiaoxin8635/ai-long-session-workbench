@@ -16,6 +16,8 @@ from app.api.routes import (
     knowledge,
     memories,
     sessions,
+    tasks,
+    tools,
     usage,
     workspaces,
 )
@@ -68,6 +70,8 @@ def create_app() -> FastAPI:
     app.include_router(memories.router)
     app.include_router(usage.router)
     app.include_router(knowledge.router)
+    app.include_router(tasks.router)
+    app.include_router(tools.router)
 
     return app
 

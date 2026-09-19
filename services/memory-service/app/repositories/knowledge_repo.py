@@ -255,3 +255,21 @@ async def load_pending_chunks(db: AsyncSession, *, file_id: uuid.UUID) -> list[K
         .order_by(KnowledgeChunk.chunk_index)
     )
     return list(result.scalars().all())
+
+
+async def list_chunks(db: AsyncSession, *, file_id: uuid.UUID) -> list[KnowledgeChunk]:
+    """取文件全部切片（chunk_index 正序；doc.read 工具与调试用）。
+
+    Args:
+        db: 数据库会话。
+        file_id: 文件 ID。
+
+    Returns:
+        切片列表（含已下线版本的历史文本，调用方按需过滤）。
+    """
+    result = await db.execute(
+        select(KnowledgeChunk)
+        .where(KnowledgeChunk.file_id == file_id)
+        .order_by(KnowledgeChunk.chunk_index)
+    )
+    return list(result.scalars().all())
