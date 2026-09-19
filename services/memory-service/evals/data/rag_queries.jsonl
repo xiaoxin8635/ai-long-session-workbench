@@ -1,0 +1,10 @@
+{"query": "EchoDesk 的产品架构是什么", "expect_substr": "Open WebUI 作为产品壳"}
+{"query": "向量召回和关键词召回怎么融合", "expect_substr": "RRF 倒数排名融合"}
+{"query": "上下文超预算了怎么裁剪", "expect_substr": "evict_order"}
+{"query": "长期记忆有哪几种类型", "expect_substr": "procedural 记录用户偏好"}
+{"query": "历史消息太多会怎么处理", "expect_substr": "摘要压缩"}
+{"query": "看板统计哪些用量数据", "expect_substr": "prompt 与 completion 分解"}
+{"query": "接口鉴权怎么做的", "expect_substr": "Bearer JWT"}
+{"query": "上传文档后向量化是同步的吗", "expect_substr": "后台任务异步补齐"}
+{"query": "数据库用的什么向量方案", "expect_substr": "pgvector"}
+{"query": "旧版本文件重传后会怎样", "expect_substr": "旧版向量下线"}

@@ -50,12 +50,13 @@ Thumbs.db
 desktop.ini
 
 # ===== 本地运行数据（Docker 卷、数据库、上传文件）=====
-data/
-volumes/
-backups/
-uploads/
+# 锚定仓库根，避免误伤 evals/data/ 等源码内数据集目录
+/data/
+/volumes/
+/backups/
+/uploads/
 *.log
-logs/
+/logs/
 *.sqlite3
 
 # ===== 评测与临时产物 =====
