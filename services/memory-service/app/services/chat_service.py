@@ -23,6 +23,7 @@ from app.llm.client import LLMClient
 from app.memory.pipeline import extract_pipeline
 from app.memory.working_memory import WorkingMemory
 from app.models.user import User
+from app.observability import tracing
 from app.repositories import session_repo, usage_repo
 from app.schemas.chat import ChatCompletionRequest
 from app.schemas.session import MessageCreate
@@ -135,10 +136,24 @@ class ChatService:
         session_id: uuid.UUID,
         query: str,
     ) -> AssembledContext:
-        """M-05 ContextBuilder 装配（公开供路由层取 citations；sections 供用量统计）。"""
-        return await self._context_builder.build(
-            db, ws_id=ws_id, user_id=user_id, session_id=session_id, query=query
-        )
+        """M-05 ContextBuilder 装配（公开供路由层取 citations；sections 供用量统计）。
+
+        M-12 起包 context.assemble span：各区块 token 明细与装配总数进
+        Langfuse metadata（未配置观测时 no-op，零开销）。
+        """
+        with tracing.span("context.assemble") as obs:
+            assembled = await self._context_builder.build(
+                db, ws_id=ws_id, user_id=user_id, session_id=session_id, query=query
+            )
+            obs.update(
+                metadata={
+                    "workspace_id": str(ws_id),
+                    # 各区块预算内实占 token（docs/06 §14：context.assemble 区块明细）
+                    "sections": {s.key.value: s.tokens for s in assembled.sections},
+                    "total_tokens": sum(s.tokens for s in assembled.sections),
+                }
+            )
+        return assembled
 
     async def context_messages(
         self,

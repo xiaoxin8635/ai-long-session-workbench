@@ -27,6 +27,7 @@ from app.core.errors import AppError
 from app.db.session import get_session_factory
 from app.models.enums import ToolCallStatus, ToolRiskLevel
 from app.models.user import User
+from app.observability import tracing
 from app.repositories import tool_call_repo
 from app.tools.registry import ToolDefinition, default_registry
 
@@ -160,7 +161,20 @@ async def execute_tool(
         status=ToolCallStatus.SUCCESS,  # 先占位，执行后按实际改写
     )
     try:
-        result = await tool.handler(db, ws_id=ws_id, user=user, session_id=session_id, args=args)
+        # tool.invoke span（M-12 埋点矩阵）：覆盖 handler 执行全程，终态进
+        # metadata（未配置观测时 no-op）
+        with tracing.span(
+            "tool.invoke",
+            tool=tool.name,
+            risk=tool.risk.value,
+            workspace_id=str(ws_id),
+            session_id=str(session_id) if session_id else None,
+            mode="immediate",
+        ) as obs:
+            result = await tool.handler(
+                db, ws_id=ws_id, user=user, session_id=session_id, args=args
+            )
+            obs.update(metadata={"status": ToolCallStatus.SUCCESS.value})
     except Exception as exc:  # 工具异常降级为文本说明，不炸调用方（DoD）
         logger.warning("tool_execute_failed tool=%s error=%s", tool.name, exc)
         log.status = ToolCallStatus.FAILED
@@ -271,9 +285,24 @@ async def _wait_confirm_and_execute(
         else:
             try:
                 args = _validate_args(tool, raw_args)
-                result = await tool.handler(
-                    db, ws_id=ws_id, user=_minimal_user(user_id), session_id=session_id, args=args
-                )
+                # tool.invoke span（external 确认后执行；独立根——后台任务
+                # 无请求上下文，与触发的 chat.turn 之间以 call_id 关联）
+                with tracing.span(
+                    "tool.invoke",
+                    tool=tool.name,
+                    risk=tool.risk.value,
+                    workspace_id=str(ws_id),
+                    session_id=str(session_id) if session_id else None,
+                    mode="confirmed",
+                ) as obs:
+                    result = await tool.handler(
+                        db,
+                        ws_id=ws_id,
+                        user=_minimal_user(user_id),
+                        session_id=session_id,
+                        args=args,
+                    )
+                    obs.update(metadata={"status": ToolCallStatus.SUCCESS.value})
                 log.status = ToolCallStatus.SUCCESS
                 log.result_digest = digest_result(result)
             except Exception as exc:

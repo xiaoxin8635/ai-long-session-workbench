@@ -30,6 +30,11 @@ volumes:
   openwebui-data:
   postgres-data:
   redis-data:
+  langfuse-postgres-data:
+  langfuse-redis-data:
+  langfuse-clickhouse-data:
+  langfuse-clickhouse-logs:
+  langfuse-minio-data:
 
 services:
   # ---------- memory-service：自研核心服务（FastAPI） ----------
@@ -61,6 +66,14 @@ services:
       MEMORY_SERVICE_EMBEDDING_MODEL: ${EMBEDDING_MODEL:-BAAI/bge-m3}
       # 上下文预算 profile 目录（M-05）：容器内固定挂载于 /app/config/budgets
       MEMORY_SERVICE_BUDGET_CONFIG_DIR: /app/config/budgets
+      # 价目表目录（M-12 cost_usd 折算）：容器内固定挂载于 /app/config
+      MEMORY_SERVICE_PRICING_CONFIG_DIR: /app/config
+      # Langfuse 观测（M-12）：三项任一为空 → tracing 自动降级 no-op。
+      # host 为容器网络内地址；启用观测栈后填 deploy/.env 的
+      # MEMORY_SERVICE_LANGFUSE_PUBLIC_HOST=http://langfuse-web:3000
+      MEMORY_SERVICE_LANGFUSE_PUBLIC_HOST: ${MEMORY_SERVICE_LANGFUSE_PUBLIC_HOST:-}
+      MEMORY_SERVICE_LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      MEMORY_SERVICE_LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
     volumes:
       # 预算 YAML 只读挂载（config/budgets/*.yaml，修改需重启容器生效）
       - ${CONFIG_DIR:-../config}:/app/config:ro
@@ -156,3 +169,176 @@ services:
       - workbench-net
     # 注意：Open WebUI 当前不直连 postgres/redis（自带 SQLite），
     # 未来 memory-service 加入后由它声明 depends_on，Open WebUI 经 Pipe 调用 memory-service
+
+  # ---------- Langfuse：LLM 观测栈（M-12，profile=observability 渐进启用） ----------
+  # 官方 docker-compose 的本地化裁剪：独立 PG/Redis（与业务库隔离，升级与
+  # 密码策略互不影响），数据面组件不映射宿主端口；web 映射 3001（3000 已被
+  # Open WebUI 占用）。trace 数据链路：memory-service(OTLP HTTP) → web →
+  # Redis 队列 → worker 落 ClickHouse；事件对象存 MinIO。
+  # 启用方式：先在 deploy/.env 填 LANGFUSE_* 密钥，再
+  #   docker compose -f docker-compose.yml --profile observability up -d
+  langfuse-web:
+    image: docker.langfuse.com/langfuse/langfuse:4
+    container_name: workbench-langfuse
+    restart: unless-stopped
+    profiles: ["observability"]
+    depends_on: &langfuse-depends-on
+      langfuse-postgres:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_healthy
+    ports:
+      - "${LANGFUSE_PORT:-3001}:3000"
+    environment: &langfuse-env
+      # NextAuth 会话签名密钥：仅 web 需要（worker 多余此项会被忽略）
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-changeme}
+      NEXTAUTH_URL: ${LANGFUSE_NEXTAUTH_URL:-http://localhost:3001}
+      DATABASE_URL: postgresql://langfuse:${LANGFUSE_POSTGRES_PASSWORD:-langfuse}@langfuse-postgres:5432/langfuse
+      SALT: ${LANGFUSE_SALT:-changesalt}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
+      TELEMETRY_ENABLED: "false"  # 自托管不回传匿名统计
+      CLICKHOUSE_MIGRATION_URL: clickhouse://langfuse-clickhouse:9000
+      CLICKHOUSE_URL: http://langfuse-clickhouse:8123
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:-clickhouse}
+      # 必须显式关闭集群模式：镜像 :4 未显式配置时迁移会带 ON CLUSTER
+      # 子句（单机 ClickHouse 无 ZooKeeper 直接报 code 139），此项在官方
+      # compose 中同样显式给出
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      CLICKHOUSE_CLUSTER_NAME: default
+      REDIS_HOST: langfuse-redis
+      REDIS_PORT: 6379
+      REDIS_AUTH: ${LANGFUSE_REDIS_AUTH:-langfuseredis}
+      # 事件与媒体对象存储（MinIO；媒体上传仅容器网络内可达，多模态不启用）
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_MINIO_ROOT_PASSWORD:-miniosecret}
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_MINIO_ROOT_PASSWORD:-miniosecret}
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+      # headless 初始化：首启自动建 org/project/admin 用户与 API key（密钥对
+      # 由 .env 指定，memory-service 上报直接复用，无需 UI 手动注册抄 key）
+      LANGFUSE_INIT_ORG_ID: echodesk
+      LANGFUSE_INIT_ORG_NAME: EchoDesk
+      LANGFUSE_INIT_PROJECT_ID: workbench
+      LANGFUSE_INIT_PROJECT_NAME: EchoDesk Workbench
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:-}
+      LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-}
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-}
+    networks:
+      - workbench-net
+
+  langfuse-worker:
+    image: docker.langfuse.com/langfuse/langfuse-worker:4
+    container_name: workbench-langfuse-worker
+    restart: unless-stopped
+    profiles: ["observability"]
+    depends_on: *langfuse-depends-on
+    environment:
+      <<: *langfuse-env
+    networks:
+      - workbench-net
+
+  langfuse-postgres:
+    # Langfuse v3 应用库（组织/项目/用户元数据；trace 明细在 ClickHouse）
+    image: docker.io/postgres:17
+    container_name: workbench-langfuse-postgres
+    restart: unless-stopped
+    profiles: ["observability"]
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: ${LANGFUSE_POSTGRES_PASSWORD:-langfuse}
+      POSTGRES_DB: langfuse
+      TZ: UTC
+      PGTZ: UTC
+    volumes:
+      - langfuse-postgres-data:/var/lib/postgresql/data
+    networks:
+      - workbench-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse -d langfuse"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  langfuse-redis:
+    # Langfuse 专用队列（BullMQ ingestion）；与业务 Redis 隔离，密码独立
+    image: redis:7-alpine
+    container_name: workbench-langfuse-redis
+    restart: unless-stopped
+    profiles: ["observability"]
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${LANGFUSE_REDIS_AUTH:-langfuseredis}"]
+    volumes:
+      - langfuse-redis-data:/data
+    networks:
+      - workbench-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  langfuse-clickhouse:
+    # Langfuse v3 必需：trace/observation 明细存储（本地单机即可，无宿主端口）
+    image: docker.io/clickhouse/clickhouse-server:25.12
+    container_name: workbench-langfuse-clickhouse
+    restart: unless-stopped
+    profiles: ["observability"]
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:-clickhouse}
+    volumes:
+      - langfuse-clickhouse-data:/var/lib/clickhouse
+      - langfuse-clickhouse-logs:/var/log/clickhouse-server
+      # 内存上限配置：CH 默认按 VM 内存 90% 自限，会把小内存 WSL2 VM 压到
+      # OOM（engine 卡死）——显式压到 1.5GB（见 deploy/langfuse/*.xml）
+      - ./langfuse/clickhouse-memory.xml:/etc/clickhouse-server/config.d/memory-limit.xml:ro
+    networks:
+      - workbench-net
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 1s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  langfuse-minio:
+    # 事件/媒体对象存储；启动前预建 langfuse bucket（目录即 bucket）
+    image: docker.io/minio/minio:latest
+    container_name: workbench-langfuse-minio
+    restart: unless-stopped
+    profiles: ["observability"]
+    entrypoint: sh
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" /data'
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: ${LANGFUSE_MINIO_ROOT_PASSWORD:-miniosecret}
+    volumes:
+      - langfuse-minio-data:/data
+    networks:
+      - workbench-net
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5

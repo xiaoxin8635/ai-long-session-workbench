@@ -10,6 +10,7 @@
 
 import json
 import logging
+import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
@@ -17,6 +18,7 @@ from typing import Any
 import httpx
 
 from app.core.config import get_settings
+from app.observability import tracing
 
 logger = logging.getLogger(__name__)
 
@@ -98,17 +100,28 @@ class LLMClient:
         }
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
-        resp = await self._post(payload)
-        try:
-            data = resp.json()
-            content = data["choices"][0]["message"]["content"] or ""
-            usage = data.get("usage") or {}
-            return content, LLMUsage(
-                prompt_tokens=int(usage.get("prompt_tokens", 0)),
-                completion_tokens=int(usage.get("completion_tokens", 0)),
-            )
-        except (KeyError, IndexError, ValueError, json.JSONDecodeError) as exc:
-            raise LLMError(f"上游响应格式异常: {exc}") from exc
+        with tracing.generation(self._model, json_mode=json_mode) as obs:
+            resp = await self._post(payload)
+            try:
+                data = resp.json()
+                content = data["choices"][0]["message"]["content"] or ""
+                usage = data.get("usage") or {}
+                usage_obj = LLMUsage(
+                    prompt_tokens=int(usage.get("prompt_tokens", 0)),
+                    completion_tokens=int(usage.get("completion_tokens", 0)),
+                )
+                # 非流式调用上游必回 usage：上报 token 明细供 Langfuse 成本面板
+                # （output 截断片段，不全文复制；未配置观测时 no-op）
+                obs.update(
+                    usage_details={
+                        "input": usage_obj.prompt_tokens,
+                        "output": usage_obj.completion_tokens,
+                    },
+                    output=tracing.snippet(content),
+                )
+                return content, usage_obj
+            except (KeyError, IndexError, ValueError, json.JSONDecodeError) as exc:
+                raise LLMError(f"上游响应格式异常: {exc}") from exc
 
     async def stream_chat(self, messages: list[dict[str, str]]) -> AsyncIterator[str]:
         """流式补全：逐段产出 delta 文本。
@@ -128,32 +141,49 @@ class LLMClient:
         }
         payload = {"model": self._model, "messages": messages, "stream": True}
 
+        # llm.call span（generation 类型）：TTFB（首字延迟）与产出字符数随
+        # 消费统计，finally 统一上报——覆盖正常结束/客户端中断/重试耗尽全部
+        # 路径（未配置观测时 no-op，零开销）
+        started = time.perf_counter()
+        ttfb_ms: float | None = None
+        chars = 0
         last_error: Exception | None = None
-        for attempt in range(settings.llm_max_retries + 1):
+        with tracing.generation(self._model) as obs:
             try:
-                async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds) as client:
-                    async with client.stream("POST", url, headers=headers, json=payload) as resp:
-                        if resp.status_code != 200:
-                            body = (await resp.aread()).decode("utf-8", "replace")
-                            raise LLMError(f"上游 {resp.status_code}: {body[:200]}")
-                        async for line in resp.aiter_lines():
-                            if not line.startswith("data:"):
-                                continue
-                            data = line[len("data:") :].strip()
-                            if data == "[DONE]":
-                                return
-                            try:
-                                chunk = json.loads(data)
-                                delta = chunk["choices"][0]["delta"].get("content")
-                            except (KeyError, IndexError, json.JSONDecodeError):
-                                continue  # 忽略 role/finish 等非内容分片
-                            if delta:
-                                yield delta
-                return  # 流正常结束
-            except httpx.HTTPError as exc:
-                last_error = LLMError(f"网络错误: {exc}")
-                logger.warning("llm_stream_retry attempt=%s error=%s", attempt, exc)
-        raise last_error or LLMError("未知上游错误")
+                for attempt in range(settings.llm_max_retries + 1):
+                    try:
+                        async with httpx.AsyncClient(
+                            timeout=settings.llm_timeout_seconds
+                        ) as client:
+                            async with client.stream(
+                                "POST", url, headers=headers, json=payload
+                            ) as resp:
+                                if resp.status_code != 200:
+                                    body = (await resp.aread()).decode("utf-8", "replace")
+                                    raise LLMError(f"上游 {resp.status_code}: {body[:200]}")
+                                async for line in resp.aiter_lines():
+                                    if not line.startswith("data:"):
+                                        continue
+                                    data = line[len("data:") :].strip()
+                                    if data == "[DONE]":
+                                        return
+                                    try:
+                                        chunk = json.loads(data)
+                                        delta = chunk["choices"][0]["delta"].get("content")
+                                    except (KeyError, IndexError, json.JSONDecodeError):
+                                        continue  # 忽略 role/finish 等非内容分片
+                                    if delta:
+                                        if ttfb_ms is None:
+                                            ttfb_ms = (time.perf_counter() - started) * 1000
+                                        chars += len(delta)
+                                        yield delta
+                        return  # 流正常结束
+                    except httpx.HTTPError as exc:
+                        last_error = LLMError(f"网络错误: {exc}")
+                        logger.warning("llm_stream_retry attempt=%s error=%s", attempt, exc)
+                raise last_error or LLMError("未知上游错误")
+            finally:
+                obs.update(metadata={"stream": True, "ttfb_ms": ttfb_ms, "chars": chars})
 
 
 # ---- 进程级单例与依赖注入 ----

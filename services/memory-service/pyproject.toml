@@ -27,6 +27,7 @@ dependencies = [
     "jieba>=0.42",           # RAG 中文分词（M-07 BM25 索引侧）
     "rank-bm25>=0.2",        # RAG BM25 关键词召回路（M-07）
     "python-multipart>=0.0.9", # FastAPI multipart 文件上传解析（M-07 知识库）
+    "langfuse>=4,<5",
 ]
 
 [dependency-groups]

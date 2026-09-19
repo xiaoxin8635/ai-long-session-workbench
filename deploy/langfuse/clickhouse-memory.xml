@@ -1,0 +1,11 @@
+<!-- ClickHouse 内存上限（M-12 Langfuse 栈本机适配）
+     单机开发环境 WSL2 VM 内存有限：CH 默认按可用内存 90% 自设 server 上限，
+     会把 VM 压到 OOM（docker engine 随之 500/卡死）。显式压到 1.5GB——
+     本地单用户 trace 量级足够（trace 明细按天分区，查询多为近期数据）。
+     挂载点：容器 /etc/clickhouse-server/config.d/memory-limit.xml -->
+<clickhouse>
+    <max_server_memory_usage>1500000000</max_server_memory_usage>
+    <mark_cache_size>200000000</mark_cache_size>
+    <uncompressed_cache_size>100000000</uncompressed_cache_size>
+    <max_server_memory_usage_to_ram_ratio>0.8</max_server_memory_usage_to_ram_ratio>
+</clickhouse>

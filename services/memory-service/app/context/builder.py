@@ -34,6 +34,7 @@ from app.llm.rerank import get_rerank_client
 from app.memory.retriever import MemoryRetriever
 from app.memory.working_memory import WorkingMemory
 from app.models.enums import MemoryType, TaskStatus
+from app.observability import tracing
 from app.rag.retriever import KnowledgeRetriever
 from app.rag.schemas import CitedChunk
 from app.repositories import memory_repo, session_repo, task_repo
@@ -337,7 +338,16 @@ class ContextBuilder:
         # ② 长期记忆检索（不可用降级为空，主对话不受影响）
         if self._retriever is not None and query:
             try:
-                hits = await self._retriever.retrieve(db, ws_id=ws_id, user_id=user_id, query=query)
+                with tracing.span("memory.retrieve") as obs:
+                    hits = await self._retriever.retrieve(
+                        db, ws_id=ws_id, user_id=user_id, query=query
+                    )
+                    obs.update(
+                        metadata={
+                            "query": tracing.snippet(query, 100),
+                            "hits": len(hits),
+                        }
+                    )
             except EmbeddingError as exc:
                 logger.warning("context_retrieval_degraded error=%s", exc)
                 hits = []
@@ -380,7 +390,14 @@ class ContextBuilder:
         rag_hits: list[CitedChunk] = []
         if self._knowledge is not None and query:
             try:
-                rag_hits = await self._knowledge.search(db, ws_id=ws_id, query=query)
+                with tracing.span("rag.search") as obs:
+                    rag_hits = await self._knowledge.search(db, ws_id=ws_id, query=query)
+                    obs.update(
+                        metadata={
+                            "query": tracing.snippet(query, 100),
+                            "hits": len(rag_hits),
+                        }
+                    )
             except Exception as exc:
                 logger.warning("context_rag_degraded error=%s", exc)
                 rag_hits = []

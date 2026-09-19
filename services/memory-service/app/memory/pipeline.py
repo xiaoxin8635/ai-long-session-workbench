@@ -25,6 +25,7 @@ from app.memory.deduplicator import MemoryDeduplicator
 from app.memory.extractor import MemoryExtractor
 from app.memory.schemas import ConflictAction, MemoryCandidate
 from app.models.memory import Memory
+from app.observability import tracing
 from app.repositories import memory_repo
 
 logger = logging.getLogger(__name__)
@@ -227,9 +228,19 @@ async def extract_pipeline(
     )
     try:
         async with get_session_factory()() as db:
-            return await pipeline.run(
-                db, ws_id=ws_id, user_id=user_id, session_id=session_id, messages=messages
-            )
+            # memory.extract span（M-12）：后台任务继承触发点的上下文快照，
+            # 正常挂触发的 chat.turn 之下；facts/written 计数完成后上报
+            with tracing.span(
+                "memory.extract",
+                workspace_id=str(ws_id),
+                session_id=str(session_id),
+                model=get_settings().extractor_model or get_settings().llm_model,
+            ) as obs:
+                written = await pipeline.run(
+                    db, ws_id=ws_id, user_id=user_id, session_id=session_id, messages=messages
+                )
+                obs.update(metadata={"written": len(written)})
+                return written
     except Exception:
         logger.exception("extract_pipeline_failed ws=%s session=%s", ws_id, session_id)
         return []

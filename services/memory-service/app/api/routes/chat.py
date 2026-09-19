@@ -19,10 +19,12 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
 from app.context.tokenizer import count_tokens
+from app.core.config import get_settings
 from app.core.deps import CurrentUser, DbDep, get_redis, require_ws_member
 from app.core.errors import AppError
 from app.llm.client import LLMError, LLMNotConfigured, get_llm_client
 from app.memory.working_memory import WorkingMemory
+from app.observability import tracing
 from app.schemas.chat import ChatCompletionRequest, ChatMetadata, TaskCompletionRequest
 from app.schemas.knowledge import Citation
 from app.services.chat_service import ChatService
@@ -82,18 +84,27 @@ async def chat_completions(payload: ChatCompletionRequest, user: CurrentUser, db
     # ---- 非流式 ----
     if not payload.stream:
         try:
-            assembled = await service.assemble(
-                db, ws_id=ws_id, user_id=user.id, session_id=session_id, query=query
-            )
-            answer = await service.complete_answer(
-                db,
-                ws_id=ws_id,
-                user_id=user.id,
-                session_id=session_id,
-                payload=payload,
-                user_msg_id=user_msg_id,
-                assembled=assembled,
-            )
+            with tracing.turn(
+                session_id=str(session_id),
+                user_id=str(user.id),
+                tags=["chat"],
+                workspace_id=str(ws_id),
+                stream=False,
+                model=get_settings().llm_model,
+                query=tracing.snippet(query),
+            ):
+                assembled = await service.assemble(
+                    db, ws_id=ws_id, user_id=user.id, session_id=session_id, query=query
+                )
+                answer = await service.complete_answer(
+                    db,
+                    ws_id=ws_id,
+                    user_id=user.id,
+                    session_id=session_id,
+                    payload=payload,
+                    user_msg_id=user_msg_id,
+                    assembled=assembled,
+                )
         except LLMError as exc:
             raise AppError("llm_upstream_error", 502, str(exc)) from exc
         return _non_stream_response(completion_id, created, answer, session_id, assembled.citations)
@@ -102,56 +113,67 @@ async def chat_completions(payload: ChatCompletionRequest, user: CurrentUser, db
     async def event_stream() -> AsyncIterator[str]:
         answer_parts: list[str] = []
         first_chunk = True
-        try:
-            # 装配在生成器内执行（依赖请求级 db 会话，随响应流生命周期存活）
-            assembled = await service.assemble(
-                db, ws_id=ws_id, user_id=user.id, session_id=session_id, query=query
-            )
-            async for delta_text in service.stream_answer(
-                db,
-                ws_id=ws_id,
-                user_id=user.id,
-                session_id=session_id,
-                payload=payload,
-                user_msg_id=user_msg_id,
-                assembled=assembled,
-            ):
-                answer_parts.append(delta_text)
-                chunk: dict = {
-                    "id": completion_id,
-                    "object": "chat.completion.chunk",
-                    "created": created,
-                    "model": "echodesk",
-                    "choices": [{"index": 0, "delta": {"content": delta_text}}],
-                }
-                # 首片携带 session_id，客户端凭它延续多轮会话
-                if first_chunk:
-                    chunk["metadata"] = {"session_id": str(session_id)}
-                    first_chunk = False
-                yield _sse(chunk)
-            finish_metadata: dict = {"session_id": str(session_id)}
-            if assembled.citations:
-                finish_metadata["citations"] = [
-                    c.model_dump() for c in _citations(assembled.citations)
-                ]
-            yield _sse(
-                {
-                    "id": completion_id,
-                    "object": "chat.completion.chunk",
-                    "created": created,
-                    "model": "echodesk",
-                    "metadata": finish_metadata,
-                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
-                    "usage": {
-                        "completion_tokens": count_tokens("".join(answer_parts)),
-                    },
-                }
-            )
-            yield "data: [DONE]\n\n"
-        except LLMError as exc:
-            logger.error("chat_stream_llm_error session=%s error=%s", session_id, exc)
-            yield _sse({"error": {"message": str(exc), "type": "upstream_error"}})
-            yield "data: [DONE]\n\n"
+        # chat.turn 根 span 在生成器内包裹（随响应流生命周期存活，覆盖
+        # 装配/生成/落库全程；trace_id 自动取请求中间件的 trace_id_var）
+        with tracing.turn(
+            session_id=str(session_id),
+            user_id=str(user.id),
+            tags=["chat"],
+            workspace_id=str(ws_id),
+            stream=True,
+            model=get_settings().llm_model,
+            query=tracing.snippet(query),
+        ):
+            try:
+                # 装配在生成器内执行（依赖请求级 db 会话，随响应流生命周期存活）
+                assembled = await service.assemble(
+                    db, ws_id=ws_id, user_id=user.id, session_id=session_id, query=query
+                )
+                async for delta_text in service.stream_answer(
+                    db,
+                    ws_id=ws_id,
+                    user_id=user.id,
+                    session_id=session_id,
+                    payload=payload,
+                    user_msg_id=user_msg_id,
+                    assembled=assembled,
+                ):
+                    answer_parts.append(delta_text)
+                    chunk: dict = {
+                        "id": completion_id,
+                        "object": "chat.completion.chunk",
+                        "created": created,
+                        "model": "echodesk",
+                        "choices": [{"index": 0, "delta": {"content": delta_text}}],
+                    }
+                    # 首片携带 session_id，客户端凭它延续多轮会话
+                    if first_chunk:
+                        chunk["metadata"] = {"session_id": str(session_id)}
+                        first_chunk = False
+                    yield _sse(chunk)
+                finish_metadata: dict = {"session_id": str(session_id)}
+                if assembled.citations:
+                    finish_metadata["citations"] = [
+                        c.model_dump() for c in _citations(assembled.citations)
+                    ]
+                yield _sse(
+                    {
+                        "id": completion_id,
+                        "object": "chat.completion.chunk",
+                        "created": created,
+                        "model": "echodesk",
+                        "metadata": finish_metadata,
+                        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                        "usage": {
+                            "completion_tokens": count_tokens("".join(answer_parts)),
+                        },
+                    }
+                )
+                yield "data: [DONE]\n\n"
+            except LLMError as exc:
+                logger.error("chat_stream_llm_error session=%s error=%s", session_id, exc)
+                yield _sse({"error": {"message": str(exc), "type": "upstream_error"}})
+                yield "data: [DONE]\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 

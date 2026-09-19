@@ -13,7 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.context.schemas import AssembledContext, SectionKey
 from app.context.tokenizer import count_tokens
+from app.core.config import get_settings
 from app.models.observability import TokenUsage
+from app.observability.pricing import cost_usd_for
 
 # 记忆类区块（token_usages.memory_tokens 的聚合口径）
 _MEMORY_SECTIONS = (SectionKey.PROCEDURAL, SectionKey.SEMANTIC, SectionKey.EPISODIC)
@@ -75,6 +77,9 @@ async def record_turn(
     else:
         memory_tokens = rag_tokens = tool_tokens = 0
     turn_no = await next_turn_no(db, session_id=session_id)
+    # 成本折算（M-12）：按 Settings.llm_model 查价目表（config/pricing.yaml）；
+    # 模型未收录/价目缺失记 0（估算口径，不阻断落库）
+    model = get_settings().llm_model
     entry = TokenUsage(
         workspace_id=ws_id,
         session_id=session_id,
@@ -84,8 +89,7 @@ async def record_turn(
         memory_tokens=memory_tokens,
         rag_tokens=rag_tokens,
         tool_tokens=tool_tokens,
-        # 成本折算需模型价目表（M-12 观测配置统一引入），当前恒 0
-        cost_usd=0,
+        cost_usd=cost_usd_for(model, prompt_tokens, completion_tokens),
     )
     db.add(entry)
     await db.flush()
