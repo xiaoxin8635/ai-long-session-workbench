@@ -1,12 +1,13 @@
-"""memory 仓储（M-03 级联归档；M-06 滚动摘要 episodic upsert；M-04 抽取/检索管线）。
+"""memory 仓储（M-03 级联归档；M-06 滚动摘要 episodic upsert；M-04 抽取/检索管线；
+M-11 记忆面板管理：列表过滤/版本链/用户编辑/软删除/冲突裁决）。
 
-抽取管线（去重/冲突/入库）与检索管线的全部数据访问收口在此。
+抽取管线（去重/冲突/入库）、检索管线与管理面板的全部数据访问收口在此。
 """
 
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import case, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import MemoryEventSource, MemoryEventType, MemoryStatus, MemoryType
@@ -377,3 +378,257 @@ async def count_active(db: AsyncSession, *, ws_id: uuid.UUID) -> int:
         .where(Memory.workspace_id == ws_id, Memory.status == MemoryStatus.ACTIVE)
     )
     return int(result.scalar_one())
+
+
+# ---- M-11 记忆面板管理 ----
+
+
+def _list_filters(
+    ws_id: uuid.UUID,
+    memory_type: MemoryType | None,
+    status: MemoryStatus | None,
+    keyword: str | None,
+) -> list[object]:
+    """构造列表查询的公共过滤条件（软删除始终排除，与面板口径一致）。"""
+    filters: list[object] = [Memory.workspace_id == ws_id, Memory.status != MemoryStatus.DELETED]
+    if memory_type is not None:
+        filters.append(Memory.memory_type == memory_type)
+    if status is not None:
+        filters.append(Memory.status == status)
+    if keyword:
+        # 关键词对 key 与 content 做不区分大小写的包含匹配
+        pattern = f"%{keyword}%"
+        filters.append(or_(Memory.key.ilike(pattern), Memory.content.ilike(pattern)))
+    return filters
+
+
+async def list_memories(
+    db: AsyncSession,
+    *,
+    ws_id: uuid.UUID,
+    memory_type: MemoryType | None = None,
+    status: MemoryStatus | None = None,
+    keyword: str | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> tuple[list[Memory], int]:
+    """记忆列表（面板主查询：过滤 + 分页；conflicted 置顶）。
+
+    Args:
+        db: 数据库会话。
+        ws_id: 所属 workspace。
+        memory_type: 类型过滤；None 不过滤。
+        status: 状态过滤；None 不过滤（软删除始终排除）。
+        keyword: key/content 关键词（ILIKE）；None 不过滤。
+        limit: 页大小。
+        offset: 偏移量。
+
+    Returns:
+        (条目列表, 总数)；列表按 conflicted 置顶 + updated_at 倒序。
+    """
+    filters = _list_filters(ws_id, memory_type, status, keyword)
+    total = int(
+        (await db.execute(select(func.count()).select_from(Memory).where(*filters))).scalar_one()
+    )
+    result = await db.execute(
+        select(Memory)
+        .where(*filters)
+        .order_by(
+            case((Memory.status == MemoryStatus.CONFLICTED, 0), else_=1),
+            Memory.updated_at.desc(),
+        )
+        .limit(limit)
+        .offset(offset)
+    )
+    return list(result.scalars().all()), total
+
+
+async def get_by_id(db: AsyncSession, *, ws_id: uuid.UUID, memory_id: uuid.UUID) -> Memory | None:
+    """按 ID 取单条记忆（workspace 隔离；软删除条目仍可查，供详情溯源）。
+
+    Args:
+        db: 数据库会话。
+        ws_id: 所属 workspace。
+        memory_id: 记忆 ID。
+
+    Returns:
+        命中的记忆条目；无则 None。
+    """
+    result = await db.execute(
+        select(Memory).where(Memory.workspace_id == ws_id, Memory.id == memory_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def version_chain(db: AsyncSession, memory: Memory) -> list[Memory]:
+    """沿 supersedes_id 上溯被替代的历史版本（时间倒序，不含自身）。
+
+    Args:
+        db: 数据库会话。
+        memory: 起点（当前版本）条目。
+
+    Returns:
+        被替代版本列表（最近的在前）；环或断链自动终止。
+    """
+    chain: list[Memory] = []
+    seen = {memory.id}
+    current = memory
+    while current.supersedes_id is not None and current.supersedes_id not in seen:
+        older = (
+            await db.execute(select(Memory).where(Memory.id == current.supersedes_id))
+        ).scalar_one_or_none()
+        if older is None:
+            break
+        chain.append(older)
+        seen.add(older.id)
+        current = older
+    return chain
+
+
+async def events_of(
+    db: AsyncSession, memory_id: uuid.UUID, *, limit: int = 20
+) -> list[MemoryEvent]:
+    """某条记忆的事件流水（最新在前，默认 20 条）。
+
+    Args:
+        db: 数据库会话。
+        memory_id: 记忆 ID。
+        limit: 返回条数上限。
+
+    Returns:
+        事件列表，created_at 倒序。
+    """
+    result = await db.execute(
+        select(MemoryEvent)
+        .where(MemoryEvent.memory_id == memory_id)
+        .order_by(MemoryEvent.created_at.desc())
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
+async def edit_by_user(
+    db: AsyncSession,
+    memory: Memory,
+    *,
+    content: str | None = None,
+    confidence: float | None = None,
+    importance: float | None = None,
+    expires_at: datetime | None = None,
+    expires_at_set: bool = False,
+    embedding: list[float] | None = None,
+) -> None:
+    """用户手动编辑记忆（按提交字段部分更新，version+1）+ EDITED_BY_USER 审计。
+
+    Args:
+        db: 数据库会话。
+        memory: 编辑目标（原地更新）。
+        content: 新正文；None 不改。
+        confidence / importance: 新评分；None 不改。
+        expires_at: 新 TTL；expires_at_set=True 且值为 None 表示清除。
+        expires_at_set: 请求是否显式提交了 expires_at（区分"未提交"与"提交 null"）。
+        embedding: 新正文的向量（None 保留旧向量，与 merge 口径一致）。
+    """
+    old_content = memory.content
+    changed = False
+    if content is not None and content != memory.content:
+        memory.content = content
+        changed = True
+    if confidence is not None and confidence != memory.confidence:
+        memory.confidence = confidence
+        changed = True
+    if importance is not None and importance != memory.importance:
+        memory.importance = importance
+        changed = True
+    if expires_at_set and expires_at != memory.expires_at:
+        memory.expires_at = expires_at
+        changed = True
+    if embedding is not None and content is not None:
+        memory.embedding = embedding
+    if not changed and embedding is None:
+        return  # 无任何变更：不落版本与审计
+    memory.version += 1
+    await db.flush()
+    await _add_event(
+        db,
+        memory.id,
+        MemoryEventType.EDITED_BY_USER,
+        old_value=old_content,
+        new_value=memory.content,
+        source=MemoryEventSource.USER,
+    )
+
+
+async def soft_delete(db: AsyncSession, memory: Memory) -> None:
+    """软删除记忆（status=deleted，检索与列表均不可见）+ DELETED 审计。
+
+    Args:
+        db: 数据库会话。
+        memory: 删除目标（原地更新；幂等：已删除直接返回）。
+    """
+    if memory.status == MemoryStatus.DELETED:
+        return
+    memory.status = MemoryStatus.DELETED
+    await _add_event(
+        db,
+        memory.id,
+        MemoryEventType.DELETED,
+        old_value=memory.content,
+        source=MemoryEventSource.USER,
+    )
+
+
+async def find_conflict_peer(db: AsyncSession, memory: Memory) -> Memory | None:
+    """找同 workspace 同 key 的另一条 conflicted 记忆（裁决对手方）。
+
+    Args:
+        db: 数据库会话。
+        memory: 裁决起点条目（应为 conflicted）。
+
+    Returns:
+        对手方条目；无（不存在或状态不符）则 None。
+    """
+    result = await db.execute(
+        select(Memory).where(
+            Memory.workspace_id == memory.workspace_id,
+            Memory.key == memory.key,
+            Memory.status == MemoryStatus.CONFLICTED,
+            Memory.id != memory.id,
+        )
+    )
+    peers = list(result.scalars().all())
+    return peers[0] if peers else None
+
+
+async def resolve_conflict(db: AsyncSession, winner: Memory, loser: Memory) -> None:
+    """冲突裁决落库：winner 回 active，loser 置 superseded 并挂版本链。
+
+    版本链方向与抽取管线一致（替代者持有指向被替代者的指针）：
+    winner.supersedes_id 在为空时指向 loser；已有链（曾替代更早版本）则不覆盖。
+    两条事件来源均记 USER（面板操作，区别于抽取管线自动仲裁）。
+
+    Args:
+        db: 数据库会话。
+        winner: 用户选择保留的条目（原地更新为 active）。
+        loser: 被放弃的条目（原地更新为 superseded）。
+    """
+    winner.status = MemoryStatus.ACTIVE
+    if winner.supersedes_id is None:
+        winner.supersedes_id = loser.id
+    await _add_event(
+        db,
+        winner.id,
+        MemoryEventType.UPDATED,
+        old_value=MemoryStatus.CONFLICTED.value,
+        new_value=MemoryStatus.ACTIVE.value,
+        source=MemoryEventSource.USER,
+    )
+    loser.status = MemoryStatus.SUPERSEDED
+    await _add_event(
+        db,
+        loser.id,
+        MemoryEventType.SUPERSEDED,
+        old_value=loser.content,
+        new_value=str(winner.id),
+        source=MemoryEventSource.USER,
+    )

@@ -17,12 +17,13 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.context.builder import ContextBuilder, default_builder
+from app.context.schemas import AssembledContext
 from app.core.errors import NotFoundError
 from app.llm.client import LLMClient
 from app.memory.pipeline import extract_pipeline
 from app.memory.working_memory import WorkingMemory
 from app.models.user import User
-from app.repositories import session_repo
+from app.repositories import session_repo, usage_repo
 from app.schemas.chat import ChatCompletionRequest
 from app.schemas.session import MessageCreate
 from app.services.session_service import SessionService
@@ -125,6 +126,20 @@ class ChatService:
         await self._wm.append(session_id, role=user_msg.role, content=user_msg.content)
         return message.id
 
+    async def _build_context(
+        self,
+        db: AsyncSession,
+        *,
+        ws_id: uuid.UUID,
+        user_id: uuid.UUID,
+        session_id: uuid.UUID,
+        query: str,
+    ) -> AssembledContext:
+        """M-05 ContextBuilder 装配（stream/complete 共用；sections 供用量统计）。"""
+        return await self._context_builder.build(
+            db, ws_id=ws_id, user_id=user_id, session_id=session_id, query=query
+        )
+
     async def context_messages(
         self,
         db: AsyncSession,
@@ -139,7 +154,7 @@ class ChatService:
         system（含记忆标签/摘要/知识注入）+ Working Memory 窗口，
         按区块预算裁剪；当前用户问题作为长期记忆检索的 query。
         """
-        assembled = await self._context_builder.build(
+        assembled = await self._build_context(
             db, ws_id=ws_id, user_id=user_id, session_id=session_id, query=query
         )
         return assembled.messages
@@ -154,11 +169,15 @@ class ChatService:
         answer: str,
         user_msg_id: uuid.UUID,
         user_content: str,
+        assembled: AssembledContext | None = None,
+        usage: object | None = None,
     ) -> None:
-        """持久化回答并回写 Working Memory，随后触发压缩与后台抽取。
+        """持久化回答并回写 Working Memory，随后触发压缩、用量落库与后台抽取。
 
         压缩在 maybe_compress 内部自持会话锁并吞异常；抽取为后台任务
-        fire-and-forget —— 两者失败均不影响对话。
+        fire-and-forget —— 两者失败均不影响对话。用量与消息同一事务：
+        区块明细取 assembled.sections，prompt/completion 优先上游 usage、
+        流式缺失时本地估算（usage_repo.record_turn）。
 
         Args:
             db: 数据库会话。
@@ -168,6 +187,9 @@ class ChatService:
             answer: 完整回答文本。
             user_msg_id: 本轮用户消息的数据库 ID（prepare 的返回值）。
             user_content: 本轮用户消息正文（抽取管线的输入）。
+            assembled: 本轮装配结果（用量区块明细来源）；None 时区块记 0。
+            usage: 上游 LLM usage 对象（prompt_tokens/completion_tokens）；
+                流式未回传时 None → 全量本地估算。
         """
         message = await _session_service.append_message(
             db,
@@ -176,6 +198,14 @@ class ChatService:
             payload=MessageCreate(role="assistant", content=answer),
         )
         await self._wm.append(session_id, role="assistant", content=answer)
+        await usage_repo.record_turn(
+            db,
+            ws_id=ws_id,
+            session_id=session_id,
+            answer=answer,
+            assembled=assembled,
+            usage=usage,
+        )
         await self._summarizer.maybe_compress(db, ws_id=ws_id, session_id=session_id)
         if self._extract_hook is not None:
             self._extract_hook(
@@ -198,8 +228,8 @@ class ChatService:
         payload: ChatCompletionRequest,
         user_msg_id: uuid.UUID,
     ) -> AsyncIterator[str]:
-        """流式生成并逐段产出文本；结束后统一落库并触发压缩/抽取。"""
-        messages = await self.context_messages(
+        """流式生成并逐段产出文本；结束后统一落库并触发用量/压缩/抽取。"""
+        assembled = await self._build_context(
             db,
             ws_id=ws_id,
             user_id=user_id,
@@ -207,7 +237,7 @@ class ChatService:
             query=payload.messages[-1].content,
         )
         chunks: list[str] = []
-        async for delta in self._llm.stream_chat(messages):
+        async for delta in self._llm.stream_chat(assembled.messages):
             chunks.append(delta)
             yield delta
         await self.finalize(
@@ -218,6 +248,7 @@ class ChatService:
             answer="".join(chunks),
             user_msg_id=user_msg_id,
             user_content=payload.messages[-1].content,
+            assembled=assembled,
         )
 
     async def complete_answer(
@@ -231,14 +262,14 @@ class ChatService:
         user_msg_id: uuid.UUID,
     ) -> str:
         """非流式生成；返回完整回答（落库在内部完成）。"""
-        messages = await self.context_messages(
+        assembled = await self._build_context(
             db,
             ws_id=ws_id,
             user_id=user_id,
             session_id=session_id,
             query=payload.messages[-1].content,
         )
-        answer, _usage = await self._llm.complete(messages)
+        answer, usage = await self._llm.complete(assembled.messages)
         await self.finalize(
             db,
             ws_id=ws_id,
@@ -247,5 +278,7 @@ class ChatService:
             answer=answer,
             user_msg_id=user_msg_id,
             user_content=payload.messages[-1].content,
+            assembled=assembled,
+            usage=usage,
         )
         return answer
