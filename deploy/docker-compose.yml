@@ -50,6 +50,8 @@ services:
       TZ: Asia/Shanghai
       MEMORY_SERVICE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-workbench}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-workbench}
       MEMORY_SERVICE_REDIS_URL: redis://redis:6379/0
+      # 上下文预算 profile（A/B 评测入口：deploy/.env 设 MEMORY_SERVICE_CONTEXT_BUDGET_PROFILE=memory_first 等）
+      MEMORY_SERVICE_CONTEXT_BUDGET_PROFILE: ${MEMORY_SERVICE_CONTEXT_BUDGET_PROFILE:-default}
       # JWT 密钥：在 deploy/.env 中设置（与 POSTGRES_PASSWORD 一同管理）
       MEMORY_SERVICE_JWT_SECRET: ${MEMORY_JWT_SECRET:-change-me-in-env}
       MEMORY_SERVICE_LOG_LEVEL: INFO

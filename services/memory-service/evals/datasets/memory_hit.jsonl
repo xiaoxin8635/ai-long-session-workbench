@@ -1,0 +1,20 @@
+{"fact_id": "mh-01", "fact_turn": "记一下，我的目标岗位是后端开发工程师，方向是基础架构。", "gap": 4, "probe": "我的目标岗位和方向是什么？", "expected": ["后端", "基础架构"], "traps": [["前端", "Vue"]]}
+{"fact_id": "mh-02", "fact_turn": "我的手机号是 13812345678，面试邀约打这个。", "gap": 6, "probe": "面试邀约应该打我哪个手机号？", "expected": ["13812345678"], "traps": [["13900001111"]]}
+{"fact_id": "mh-03", "fact_turn": "我的邮箱是 chenming.dev@example.com，简历投递都用它。", "gap": 3, "probe": "我的简历投递邮箱是哪个？", "expected": ["chenming.dev@example.com"], "traps": []}
+{"fact_id": "mh-04", "fact_turn": "我目前住在杭州余杭区，找工作范围限杭州本地。", "gap": 5, "probe": "我的工作城市范围有限制吗？在哪个城市？", "expected": ["杭州"], "traps": [["北京"]]}
+{"fact_id": "mh-05", "fact_turn": "我的期望薪资是月薪 25k，16 薪，低于这个不考虑。", "gap": 4, "probe": "我的薪资底线是多少？", "expected": ["25k", "16"], "traps": [["18k"]]}
+{"fact_id": "mh-06", "fact_turn": "我最近在准备系统设计面试，重点练分布式缓存这一类题。", "gap": 6, "probe": "我系统设计面试在重点练哪类题？", "expected": ["分布式缓存"], "traps": [["秒杀系统"]]}
+{"fact_id": "mh-07", "fact_turn": "我下周四下午三点有一场美团的视频面试。", "gap": 3, "probe": "我最近的面试是哪家公司、什么时间？", "expected": ["美团", "周四"], "traps": [["拼多多"]]}
+{"fact_id": "mh-08", "fact_turn": "我的导师姓王，是他建议我先沉淀一年再跳槽的。", "gap": 5, "probe": "是谁建议我先沉淀一年再跳槽的？", "expected": ["王"], "traps": [["李"]]}
+{"fact_id": "mh-09", "fact_turn": "我的项目代号叫猎户座，就是那个订单履约重构项目。", "gap": 4, "probe": "我的订单履约重构项目代号叫什么？", "expected": ["猎户座"], "traps": []}
+{"fact_id": "mh-10", "fact_turn": "我的刷题预算是每天三道，多了没时间。", "gap": 6, "probe": "我每天计划刷几道算法题？", "expected": ["三道"], "traps": [["两道"], ["十道"]]}
+{"fact_id": "mh-11", "fact_turn": "我是非科班转码的，本科是机械专业，自学转的计算机。", "gap": 4, "probe": "我的本科专业是什么？科班出身吗？", "expected": ["机械"], "traps": [["计算机", "科班"]]}
+{"fact_id": "mh-12", "fact_turn": "我有 AWS 的 Solutions Architect Associate 认证，去年考的。", "gap": 5, "probe": "我持有哪个云厂商的认证？", "expected": ["AWS"], "traps": [["阿里云"], ["Azure"]]}
+{"fact_id": "mh-13", "fact_turn": "英语方面我雅思 7 分，读写强口语一般。", "gap": 3, "probe": "我的英语水平怎么样？", "expected": ["7"], "traps": [["托福"]]}
+{"fact_id": "mh-14", "fact_turn": "开发机上我个人偏好用 Neovim 加 tmux 的工作流，不用 IDE。", "gap": 6, "probe": "我个人偏好用什么编辑器工作流？", "expected": ["Neovim"], "traps": [["VSCode"]]}
+{"fact_id": "mh-15", "fact_turn": "我们现在的服务规模是日均两亿请求量。", "gap": 4, "probe": "我们现在的服务日均请求量多大？", "expected": ["两亿"], "traps": [["千万"]]}
+{"fact_id": "mh-16", "fact_turn": "代码风格上我坚持函数不超过 40 行，团队规范也是我定的。", "gap": 5, "probe": "我定的函数行数规范是多少？", "expected": ["40"], "traps": []}
+{"fact_id": "mh-17", "fact_turn": "我的 GitHub 用户名是 cm-hust，简历上有链接。", "gap": 3, "probe": "我的 GitHub 用户名是什么？", "expected": ["cm-hust"], "traps": []}
+{"fact_id": "mh-18", "fact_turn": "面试沟通上我不擅长闲聊，希望你帮我准备直接进入技术话题的开场。", "gap": 6, "probe": "面试开场我偏好什么样的沟通方式？", "expected": ["技术"], "traps": []}
+{"fact_id": "mh-19", "fact_turn": "我给自己定的求职截止时间是今年六月底之前必须定下来。", "gap": 4, "probe": "我的求职截止时间是什么时候？", "expected": ["六月"], "traps": [["九月"]]}
+{"fact_id": "mh-20", "fact_turn": "背调联系人我留的是前同事张伟，他现在在蚂蚁。", "gap": 5, "probe": "我的背调联系人是谁？现在在哪家公司？", "expected": ["张伟", "蚂蚁"], "traps": [["王"]]}

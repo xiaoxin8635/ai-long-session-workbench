@@ -1,0 +1,42 @@
+{
+  "meta": {
+    "label": "default",
+    "generated_at": "2026-09-19T09:17:59.651479+00:00",
+    "samples": {
+      "long_turn": 2,
+      "memory_hit": 19,
+      "conflict": 8,
+      "task_continuity": 4
+    },
+    "errors": {
+      "long_turn": [],
+      "memory_hit": [
+        "mh-05: Server error '500 Internal Server Error' for url 'http://localhost:8100/api/context/preview'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+      ],
+      "conflict": [],
+      "task_continuity": []
+    },
+    "judge_effective": {
+      "context_precision": 2,
+      "hallucination": 19
+    },
+    "token_note": "actual_avg=1025 baseline_avg≈4906（全量历史字符上界近似；绝对值仅供参考，以 A/B 相对变化为主）"
+  },
+  "metrics": {
+    "memory_recall_at_5": 0.3684210526315789,
+    "memory_precision": 0.9655172413793104,
+    "context_precision": 0.86605,
+    "long_turn_consistency": 0.5,
+    "fact_conflict_rate": 0.625,
+    "hallucination_rate": 1.0,
+    "token_savings": 0.7909947304470373,
+    "p95_ttfb_ms": 1553.3706399903167,
+    "p95_e2e_ms": 43964.24148499282,
+    "task_continuity": 0.75
+  },
+  "auxiliary": {
+    "conflict_answer_accuracy": 0.75,
+    "long_turn_assert": "1/2",
+    "task_assert": "3/4"
+  }
+}

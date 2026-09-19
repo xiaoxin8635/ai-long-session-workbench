@@ -1,0 +1,4 @@
+{"task_id": "tc-01", "scenario": "面试准备任务跨会话延续", "task_title": "准备美团后端面试：复习 B+ 树索引与 Kafka 消息幂等", "priority": 1, "session_b_probe": "我之前定了一个进行中的任务，帮我看看下一步该做什么？", "assert_contains": [["索引", "B+"], ["Kafka", "幂等"]]}
+{"task_id": "tc-02", "scenario": "转岗学习任务跨会话延续", "task_title": "三个月 AI 应用转岗计划：搭最小 RAG demo 并部署上云", "priority": 0, "session_b_probe": "接着我上次的任务说，我进行到哪了、接下来做什么？", "assert_contains": [["RAG"], ["部署"]]}
+{"task_id": "tc-03", "scenario": "刷题打卡任务跨会话延续", "task_title": "每日算法刷题打卡：数组专题完成后进入链表专题并整理错题", "priority": 0, "session_b_probe": "我的打卡任务还剩什么没做？", "assert_contains": [["链表"], ["错题"]]}
+{"task_id": "tc-04", "scenario": "简历修改任务跨会话延续", "task_title": "简历针对架构岗重写：突出架构决策并找学长内推终审", "priority": 0, "session_b_probe": "我之前说好的简历修改任务，现在进行到哪一步了？", "assert_contains": [["架构"], ["内推"]]}

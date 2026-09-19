@@ -1,0 +1,43 @@
+{
+  "meta": {
+    "label": "memory_first",
+    "generated_at": "2026-09-19T10:47:20.788098+00:00",
+    "samples": {
+      "long_turn": 2,
+      "memory_hit": 18,
+      "conflict": 8,
+      "task_continuity": 4
+    },
+    "errors": {
+      "long_turn": [],
+      "memory_hit": [
+        "mh-04: Server error '500 Internal Server Error' for url 'http://localhost:8100/api/context/preview'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500",
+        "mh-07: chat failed twice: HTTPStatusError: Server error '500 Internal Server Error' for url 'http://localhost:8100/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+      ],
+      "conflict": [],
+      "task_continuity": []
+    },
+    "judge_effective": {
+      "context_precision": 2,
+      "hallucination": 18
+    },
+    "token_note": "actual_avg=1022 baseline_avg≈4110（全量历史字符上界近似；绝对值仅供参考，以 A/B 相对变化为主）"
+  },
+  "metrics": {
+    "memory_recall_at_5": 0.4444444444444444,
+    "memory_precision": 0.9930555555555556,
+    "context_precision": 0.9375,
+    "long_turn_consistency": 0.5,
+    "fact_conflict_rate": 0.75,
+    "hallucination_rate": 1.0,
+    "token_savings": 0.7513451019458621,
+    "p95_ttfb_ms": 1104.0530300000569,
+    "p95_e2e_ms": 71330.28492999995,
+    "task_continuity": 1.0
+  },
+  "auxiliary": {
+    "conflict_answer_accuracy": 0.75,
+    "long_turn_assert": "1/2",
+    "task_assert": "4/4"
+  }
+}
