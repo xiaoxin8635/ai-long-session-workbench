@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 from httpx import AsyncClient
 
-from app.llm.client import LLMError, LLMNotConfigured, LLMUsage
+from app.llm.client import LLMError, LLMNotConfigured, LLMUsage, StreamEvent, StreamTurn
 
 _PASSWORD = "passw0rd123"
 
@@ -28,6 +28,25 @@ class FakeLLM:
             if self.fail and i == 1:
                 raise LLMError("上游中断（测试注入）")
             yield part
+
+    async def stream_chat_with_tools(
+        self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]
+    ) -> Any:
+        """工具协议流式：与 stream_chat 同正文，按事件流产出（无工具调用）。"""
+        self.received = messages
+        parts = [self.reply[i : i + 4] for i in range(0, len(self.reply), 4)]
+        for i, part in enumerate(parts):
+            if self.fail and i == 1:
+                raise LLMError("上游中断（测试注入）")
+            yield StreamEvent(type="delta", text=part)
+        yield StreamEvent(
+            type="done",
+            turn=StreamTurn(
+                content=self.reply,
+                tool_calls=[],
+                usage=LLMUsage(prompt_tokens=10, completion_tokens=8),
+            ),
+        )
 
     async def complete(self, messages: list[dict[str, str]]) -> tuple[str, LLMUsage]:
         """非流式：返回完整回答。"""

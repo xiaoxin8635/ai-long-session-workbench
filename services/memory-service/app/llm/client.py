@@ -39,20 +39,73 @@ class LLMUsage:
     completion_tokens: int = 0
 
 
+@dataclass(frozen=True)
+class ToolCallRequest:
+    """LLM 发起的一次工具调用请求（流式分片拼装完成后的成品）。
+
+    Attributes:
+        id: 调用 ID（回灌 tool 消息时的 tool_call_id）。
+        name: 工具名。
+        arguments: 参数 dict（上游 JSON 字符串解析后；解析失败为空 dict）。
+    """
+
+    id: str
+    name: str
+    arguments: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class StreamTurn:
+    """带工具协议的一轮流式调用的最终汇总。
+
+    Attributes:
+        content: 全部正文增量拼接。
+        tool_calls: LLM 请求的工具调用列表（无工具调用时为空）。
+        usage: 上游 usage（未回传时为零值）。
+    """
+
+    content: str
+    tool_calls: list[ToolCallRequest]
+    usage: LLMUsage
+
+
+@dataclass(frozen=True)
+class StreamEvent:
+    """流式事件：增量文本或终结汇总。
+
+    Attributes:
+        type: "delta"（正文增量，text 有效）或 "done"（本轮结束，turn 有效）。
+        text: delta 文本（type="delta" 时非空）。
+        turn: 终结汇总（type="done" 时非 None）。
+    """
+
+    type: str
+    text: str = ""
+    turn: StreamTurn | None = None
+
+
 class LLMClient:
     """OpenAI 兼容 chat/completions 客户端（进程内复用，连接池由 httpx 管理）。"""
 
-    def __init__(self, base_url: str, api_key: str, model: str) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        api_key: str,
+        model: str,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
         """初始化客户端。
 
         Args:
             base_url: OpenAI 兼容服务地址（如 https://api.deepseek.com/v1）。
             api_key: Bearer 凭证。
             model: 模型名。
+            transport: httpx 传输层（测试注入 MockTransport 用，生产恒 None）。
         """
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
         self._model = model
+        self._transport = transport
 
     async def _post(self, payload: dict[str, Any]) -> httpx.Response:
         """带重试的 POST（仅对 5xx/网络错误重试；4xx 不重试）。"""
@@ -65,7 +118,9 @@ class LLMClient:
         last_error: Exception | None = None
         for _attempt in range(settings.llm_max_retries + 1):
             try:
-                async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds) as client:
+                async with httpx.AsyncClient(
+                    timeout=settings.llm_timeout_seconds, transport=self._transport
+                ) as client:
                     resp = await client.post(url, headers=headers, json=payload)
                 if resp.status_code >= 500:
                     last_error = LLMError(f"上游 {resp.status_code}: {resp.text[:200]}")
@@ -153,7 +208,7 @@ class LLMClient:
                 for attempt in range(settings.llm_max_retries + 1):
                     try:
                         async with httpx.AsyncClient(
-                            timeout=settings.llm_timeout_seconds
+                            timeout=settings.llm_timeout_seconds, transport=self._transport
                         ) as client:
                             async with client.stream(
                                 "POST", url, headers=headers, json=payload
@@ -184,6 +239,180 @@ class LLMClient:
                 raise last_error or LLMError("未知上游错误")
             finally:
                 obs.update(metadata={"stream": True, "ttfb_ms": ttfb_ms, "chars": chars})
+
+    async def stream_chat_with_tools(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+    ) -> AsyncIterator[StreamEvent]:
+        """流式补全（OpenAI function calling 协议）：边产出正文边拼装工具调用。
+
+        事件流：
+          - 若干 ``StreamEvent(type="delta")``（正文增量，供 SSE bridge 透传）
+          - 一个 ``StreamEvent(type="done")``（StreamTurn：正文汇总 + 工具调用
+            列表 + usage；tool_calls 非空表示 LLM 请求执行工具，本轮正文通常为空）
+
+        流式工具调用分片按 OpenAI 协议拼装：``delta.tool_calls[i]`` 携带
+        index/id/name 首片与 arguments 增量，收尾统一 JSON 解析（失败记空
+        dict 并告警，交由上层参数校验拦截）。
+
+        Args:
+            messages: OpenAI 格式消息列表（含 role=tool 的工具回灌消息）。
+            tools: OpenAI tools 参数（``[{"type": "function", "function": {...}}]``）。
+
+        Yields:
+            delta / done 事件。
+
+        Raises:
+            LLMError: 上游失败或流中断。
+        """
+        settings = get_settings()
+        url = f"{self._base_url}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+        }
+        payload = {
+            "model": self._model,
+            "messages": messages,
+            "stream": True,
+            "tools": tools,
+            # 末尾 chunk 回传 usage（choices 为空数组的专用分片）
+            "stream_options": {"include_usage": True},
+        }
+
+        started = time.perf_counter()
+        ttfb_ms: float | None = None
+        chars = 0
+        content_parts: list[str] = []
+        # 工具调用分片拼装缓冲：index -> {id, name, arguments 分片列表}
+        tool_buf: dict[int, dict[str, Any]] = {}
+        usage_obj = LLMUsage()
+        final_turn: StreamTurn | None = None
+        last_error: Exception | None = None
+        with tracing.generation(self._model, tools=len(tools)) as obs:
+            try:
+                for attempt in range(settings.llm_max_retries + 1):
+                    try:
+                        async with httpx.AsyncClient(
+                            timeout=settings.llm_timeout_seconds, transport=self._transport
+                        ) as client:
+                            async with client.stream(
+                                "POST", url, headers=headers, json=payload
+                            ) as resp:
+                                if resp.status_code != 200:
+                                    body = (await resp.aread()).decode("utf-8", "replace")
+                                    raise LLMError(f"上游 {resp.status_code}: {body[:200]}")
+                                async for line in resp.aiter_lines():
+                                    if not line.startswith("data:"):
+                                        continue
+                                    data = line[len("data:") :].strip()
+                                    if data == "[DONE]":
+                                        break
+                                    try:
+                                        chunk = json.loads(data)
+                                    except json.JSONDecodeError:
+                                        continue
+                                    # include_usage 专用分片：choices 空数组仅带 usage
+                                    chunk_usage = chunk.get("usage")
+                                    if chunk_usage:
+                                        usage_obj = LLMUsage(
+                                            prompt_tokens=int(chunk_usage.get("prompt_tokens", 0)),
+                                            completion_tokens=int(
+                                                chunk_usage.get("completion_tokens", 0)
+                                            ),
+                                        )
+                                    for choice in chunk.get("choices") or []:
+                                        self._consume_tool_stream_chunk(
+                                            choice, content_parts, tool_buf
+                                        )
+                                        delta = choice.get("delta") or {}
+                                        text = delta.get("content")
+                                        if text:
+                                            if ttfb_ms is None:
+                                                ttfb_ms = (time.perf_counter() - started) * 1000
+                                            chars += len(text)
+                                            content_parts.append(text)
+                                            yield StreamEvent(type="delta", text=text)
+                        break  # 流正常结束（[DONE] 或服务端断流均视为完成）
+                    except httpx.HTTPError as exc:
+                        last_error = LLMError(f"网络错误: {exc}")
+                        logger.warning("llm_stream_retry attempt=%s error=%s", attempt, exc)
+                if last_error is not None and not content_parts and not tool_buf:
+                    raise last_error
+                final_turn = StreamTurn(
+                    content="".join(content_parts),
+                    tool_calls=self._flush_tool_buf(tool_buf),
+                    usage=usage_obj,
+                )
+                yield StreamEvent(type="done", turn=final_turn)
+            finally:
+                # Langfuse span update 整体覆盖 metadata：收尾一次性上报，
+                # 覆盖正常结束/上游拒绝/重试耗尽全部路径（未配置观测时 no-op）
+                metadata: dict[str, Any] = {"stream": True, "ttfb_ms": ttfb_ms, "chars": chars}
+                update_kwargs: dict[str, Any] = {"metadata": metadata}
+                if final_turn is not None:
+                    metadata["tool_calls"] = len(final_turn.tool_calls)
+                    update_kwargs["output"] = tracing.snippet(final_turn.content)
+                obs.update(**update_kwargs)
+
+    @staticmethod
+    def _consume_tool_stream_chunk(
+        choice: dict[str, Any],
+        content_parts: list[str],
+        tool_buf: dict[int, dict[str, Any]],
+    ) -> None:
+        """消费一个流式 choice 分片：正文增量与工具调用增量分别落位。
+
+        Args:
+            choice: 上游 chunk 的单个 choice 对象。
+            content_parts: 正文增量累积列表（原地追加）。
+            tool_buf: 工具调用拼装缓冲（index -> 分片状态，原地更新）。
+        """
+        delta = choice.get("delta") or {}
+        for tc in delta.get("tool_calls") or []:
+            index = int(tc.get("index", 0))
+            slot = tool_buf.setdefault(index, {"id": "", "name": "", "args_parts": []})
+            if tc.get("id"):
+                slot["id"] = tc["id"]
+            fn = tc.get("function") or {}
+            if fn.get("name"):
+                slot["name"] = fn["name"]  # 名称通常单分片完整到达，覆盖即取最新
+            if fn.get("arguments"):
+                slot["args_parts"].append(fn["arguments"])
+
+    @staticmethod
+    def _flush_tool_buf(
+        tool_buf: dict[int, dict[str, Any]],
+    ) -> list[ToolCallRequest]:
+        """拼装缓冲 → 成品工具调用列表（按 index 有序；arguments 容错解析）。
+
+        Args:
+            tool_buf: 流式拼装缓冲。
+
+        Returns:
+            工具调用请求列表。
+        """
+        calls: list[ToolCallRequest] = []
+        for index in sorted(tool_buf):
+            slot = tool_buf[index]
+            raw_args = "".join(slot["args_parts"])
+            try:
+                arguments: dict[str, Any] = json.loads(raw_args) if raw_args else {}
+            except json.JSONDecodeError:
+                logger.warning(
+                    "llm_tool_args_parse_failed name=%s raw=%r", slot["name"], raw_args[:200]
+                )
+                arguments = {}
+            calls.append(
+                ToolCallRequest(
+                    id=slot["id"] or f"call_{index}",
+                    name=slot["name"],
+                    arguments=arguments,
+                )
+            )
+        return calls
 
 
 # ---- 进程级单例与依赖注入 ----

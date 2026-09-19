@@ -18,10 +18,13 @@ class ChatMetadata(BaseModel):
     Attributes:
         workspace_id: 目标 workspace（鉴权与隔离用，必填）。
         session_id: 目标会话；缺省时自动创建新会话。
+        enable_tools: 是否启用 Agent 工具循环（M-08 M3）；False 时纯对话
+            （不注入 tools 参数，省 token 且无工具行为）。
     """
 
     workspace_id: str = Field(min_length=1)
     session_id: str | None = None
+    enable_tools: bool = True
 
 
 class ChatCompletionRequest(BaseModel):
@@ -31,6 +34,24 @@ class ChatCompletionRequest(BaseModel):
     stream: bool = True
     metadata: ChatMetadata
     temperature: float | None = Field(default=None, ge=0, le=2)
+
+
+class ChatResumeRequest(BaseModel):
+    """POST /v1/chat/resume 请求体（M-08 M3 确认流恢复）。
+
+    用户对 external 工具调用作出裁决后恢复挂起的图，SSE 续传剩余回答。
+
+    Attributes:
+        workspace_id: 目标 workspace（鉴权与隔离用）。
+        session_id: 挂起所在的会话（checkpoint thread 的组成部分）。
+        call_id: 待裁决的 tool_call_logs 记录 ID。
+        approve: True 执行 / False 拒绝。
+    """
+
+    workspace_id: str = Field(min_length=1)
+    session_id: str = Field(min_length=1)
+    call_id: str = Field(min_length=1)
+    approve: bool
 
 
 class TaskCompletionRequest(BaseModel):

@@ -83,6 +83,13 @@ class Settings(BaseSettings):
     web_fetch_timeout_seconds: float = 15.0  # web.fetch 单次抓取超时
     web_fetch_max_bytes: int = 524288  # web.fetch 响应体上限（512KB，防超大页面）
 
+    # ---- MCP 外部工具（M-08 M3）----
+    # server 配置 JSON 数组，如 [{"name":"fs","transport":"http","url":"http://host:9000/mcp"}]
+    mcp_servers_json: str = ""
+    mcp_tool_risk: str = "external"  # MCP 工具默认风险分级（D1：最保守，可放宽为 write）
+    mcp_connect_timeout_seconds: float = 10.0  # 启动期单 server 连接超时
+    mcp_call_timeout_seconds: float = 60.0  # 单次 MCP 工具调用超时
+
     # ---- 任务与待办（M-10）----
     task_brief_limit: int = 5  # 新会话开场注入的未完成任务条数上限
     task_progress_ttl_days: int = 30  # 任务进度记忆 TTL（docs/01 §5.7：进度类事实 30 天）

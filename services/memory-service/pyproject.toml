@@ -28,6 +28,9 @@ dependencies = [
     "rank-bm25>=0.2",        # RAG BM25 关键词召回路（M-07）
     "python-multipart>=0.0.9", # FastAPI multipart 文件上传解析（M-07 知识库）
     "langfuse>=4,<5",
+    "langgraph>=1.2",                    # Agent tool-loop 编排（M-08 M3）
+    "langgraph-checkpoint-postgres>=3.1", # 图 checkpoint 持久化（M-08 M3 中断恢复）
+    "mcp>=2.2",                          # 外部 MCP 服务器接入（M-08 M3）
 ]
 
 [dependency-groups]

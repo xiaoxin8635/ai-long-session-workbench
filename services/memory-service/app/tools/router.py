@@ -70,7 +70,7 @@ def digest_result(result: dict[str, Any]) -> str:
     return text[:limit] + f"…[已截断，原始 {len(text)} 字符]"
 
 
-def _validate_args(tool: ToolDefinition, raw_args: dict[str, Any]) -> Any:
+def validate_args(tool: ToolDefinition, raw_args: dict[str, Any]) -> Any:
     """按工具参数模型校验调用参数。
 
     Args:
@@ -121,7 +121,7 @@ async def execute_tool(
     tool = default_registry.get(name)
     if tool is None:
         raise AppError("tool_not_found", 404, f"工具 {name} 未注册")
-    args = _validate_args(tool, raw_args)
+    args = validate_args(tool, raw_args)
 
     if tool.risk is ToolRiskLevel.EXTERNAL:
         log = await tool_call_repo.create_log(
@@ -284,7 +284,7 @@ async def _wait_confirm_and_execute(
             log.result_digest = "用户拒绝执行"
         else:
             try:
-                args = _validate_args(tool, raw_args)
+                args = validate_args(tool, raw_args)
                 # tool.invoke span（external 确认后执行；独立根——后台任务
                 # 无请求上下文，与触发的 chat.turn 之间以 call_id 关联）
                 with tracing.span(

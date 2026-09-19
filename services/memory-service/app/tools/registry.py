@@ -71,3 +71,34 @@ class ToolRegistry:
 # ---- 进程级默认注册表（builtin 包导入时填充）----
 
 default_registry = ToolRegistry()
+
+
+def openai_tools_schema(registry: ToolRegistry | None = None) -> list[dict[str, Any]]:
+    """把注册表转为 OpenAI tools 参数（M-08 M3 chat 工具循环用）。
+
+    Args:
+        registry: 目标注册表；None 用进程级 default_registry。
+
+    Returns:
+        ``[{"type": "function", "function": {name/description/parameters}}]``；
+        参数 schema 取自 args_model 的 JSON Schema（无参工具为空 object）。
+    """
+    source = registry if registry is not None else default_registry
+    tools: list[dict[str, Any]] = []
+    for definition in source.list():
+        parameters: dict[str, Any] = (
+            definition.args_model.model_json_schema()
+            if definition.args_model is not None
+            else {"type": "object", "properties": {}}
+        )
+        tools.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": definition.name,
+                    "description": definition.description,
+                    "parameters": parameters,
+                },
+            }
+        )
+    return tools

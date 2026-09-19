@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.agent.checkpoint import get_agent_runtime
 from app.api.routes import (
     auth,
     chat,
@@ -30,16 +31,25 @@ from app.core.errors import AppError, app_error_handler
 from app.core.logging import setup_logging
 from app.core.middleware import TraceIDMiddleware
 from app.observability.tracing import shutdown_flush
+from app.tools.mcp_client import connect_mcp_tools, disconnect_mcp_tools
 
 
 @asynccontextmanager
 async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
-    """进程生命周期：退出时兜底 flush Langfuse 批量上报队列（M-12）。
+    """进程生命周期：启动 checkpoint 池与 MCP 外部工具，退出时逐一释放。
+
+    降级契约：PostgresSaver 不可用降级 InMemorySaver（AgentRuntime.start
+    内部处理）；MCP server 连接失败逐条跳过——均不阻塞启动。
 
     Yields:
-        应用存活期；shutdown 段 flush 后返回（未配置观测时为 no-op）。
+        应用存活期；shutdown 段断开 MCP 连接、关闭 checkpoint 池、flush
+        Langfuse 批量上报队列（M-12）后返回（未配置项均为 no-op）。
     """
+    await get_agent_runtime().start()
+    await connect_mcp_tools(get_settings())
     yield
+    await disconnect_mcp_tools()
+    await get_agent_runtime().close()
     shutdown_flush()
 
 

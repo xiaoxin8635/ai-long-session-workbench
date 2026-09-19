@@ -19,7 +19,7 @@ from sqlalchemy import select, update
 from app.context.tokenizer import count_tokens
 from app.core.deps import get_redis
 from app.db.session import get_session_factory
-from app.llm.client import LLMUsage
+from app.llm.client import LLMUsage, StreamEvent, StreamTurn
 from app.memory.working_memory import WorkingMemory
 from app.models.enums import MemberRole
 from app.models.observability import TokenUsage
@@ -32,15 +32,38 @@ _PASSWORD = "passw0rd123"
 
 
 class FakeLLM:
-    """可编程 LLM 假实现（非流式回传固定 usage；流式无 usage 由本地估算）。"""
+    """可编程 LLM 假实现（工具协议轮的 usage 可配置，默认上游 10/8）。
 
-    def __init__(self, reply: str = "这是 EchoDesk 的测试回答。") -> None:
-        """Args: reply: 预设回答文本。"""
+    M-08 M3 起非流式对话也走 Agent 图（stream_chat_with_tools），
+    complete() 仅作接口完备保留。
+    """
+
+    def __init__(
+        self,
+        reply: str = "这是 EchoDesk 的测试回答。",
+        stream_usage: LLMUsage | None = None,
+    ) -> None:
+        """Args:
+        reply: 预设回答文本。
+        stream_usage: 工具协议轮上游 usage；LLMUsage() 零值 → 走本地估算，
+            缺省为 10/8（上游 usage 优先语义）。
+        """
         self.reply = reply
+        self.stream_usage = stream_usage or LLMUsage(prompt_tokens=10, completion_tokens=8)
 
     async def stream_chat(self, messages: list[dict[str, str]]) -> Any:
         """流式：整段一次产出（不携带 usage）。"""
         yield self.reply
+
+    async def stream_chat_with_tools(
+        self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]
+    ) -> Any:
+        """工具协议流式：与 stream_chat 同正文，携带可配置 usage。"""
+        yield StreamEvent(type="delta", text=self.reply)
+        yield StreamEvent(
+            type="done",
+            turn=StreamTurn(content=self.reply, tool_calls=[], usage=self.stream_usage),
+        )
 
     async def complete(self, messages: list[dict[str, str]]) -> tuple[str, LLMUsage]:
         """非流式：返回完整回答与固定 usage。"""
@@ -111,10 +134,14 @@ async def test_chat_records_usage_per_turn(usage_client: AsyncClient) -> None:
         await db.close()
 
 
-async def test_stream_turn_estimates_locally(usage_client: AsyncClient) -> None:
-    """流式（无上游 usage）：本地启发式估算 prompt/completion（均 > 0）。"""
-    headers, ws = await _auth_setup(usage_client, "usage_stream")
-    resp = await usage_client.post(
+async def test_stream_turn_estimates_locally(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """流式（上游 usage 零值）：本地启发式估算 prompt/completion（均 > 0）。"""
+    fake = FakeLLM(stream_usage=LLMUsage())  # 零 usage → record_turn 走本地估算
+    monkeypatch.setattr("app.api.routes.chat.get_llm_client", lambda: fake)
+    headers, ws = await _auth_setup(client, "usage_stream")
+    resp = await client.post(
         "/v1/chat/completions", headers=headers, json=_body(ws["id"], "流式问题", stream=True)
     )
     assert resp.status_code == 200
