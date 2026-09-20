@@ -1,7 +1,7 @@
 /**
  * 模块占位页（EchoDesk 前端，M-F1 骨架用）。
  *
- * M-F4~M-F5 逐个替换为完整实现：记忆/知识库/任务/用量/设置。
+ * M-F5 逐个替换为完整实现：知识库/任务/用量/设置。
  */
 
 /**
@@ -19,11 +19,6 @@ export function Placeholder({ title, hint }: { title: string; hint: string }): J
       </div>
     </div>
   );
-}
-
-/** 记忆工作台占位（M-F4 实现：列表/详情/编辑/冲突裁决）。 */
-export function MemoriesPage(): JSX.Element {
-  return <Placeholder title="记忆工作台" hint="M-F4 交付：四层记忆管理 + 冲突裁决" />;
 }
 
 /** 知识库占位（M-F5 实现：上传/状态/检索调试）。 */

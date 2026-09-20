@@ -15,10 +15,10 @@ import {
 import AppLayout from "./components/AppLayout";
 import ChatPage from "./pages/ChatPage";
 import LoginPage from "./pages/Login";
+import MemoriesPage from "./pages/MemoriesPage";
 import ToolsPage from "./pages/ToolsPage";
 import {
   KnowledgePage,
-  MemoriesPage,
   SettingsPage,
   TasksPage,
   UsagePage,

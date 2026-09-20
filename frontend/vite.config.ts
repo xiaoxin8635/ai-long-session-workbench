@@ -26,5 +26,8 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    // 本机 WSL2 VM 常驻占用约 8GB，并行 worker 会偶发 OOM 崩溃（v3.2 实测），
+    // 文件量小改为串行跑，稳定性优先
+    fileParallelism: false,
   },
 });

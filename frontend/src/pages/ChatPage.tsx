@@ -5,6 +5,7 @@
  * SSE 流式追加 + 输入框）+ 右侧上下文面板（320px，M-F4 充实）。
  */
 import { useEffect, useRef, useState, type JSX, type KeyboardEvent } from "react";
+import { ContextPanel } from "../components/ContextPanel";
 import { MessageBubble } from "../components/MessageBubble";
 import { ToolConfirmCard } from "../components/ToolConfirmCard";
 import type { SessionRead } from "../api/sessions";
@@ -351,15 +352,12 @@ export default function ChatPage(): JSX.Element {
         </footer>
       </section>
 
-      {/* 右侧上下文面板（M-F4 充实：记忆命中/上下文预览/检索调试） */}
+      {/* 右侧上下文面板（记忆命中/区块预算/装配产物明细） */}
       <aside
-        className="hidden w-80 shrink-0 flex-col border-l border-slate-200 bg-slate-50 p-4
-                   dark:border-slate-800 dark:bg-slate-900 xl:flex"
+        className="hidden w-80 shrink-0 border-l border-slate-200 bg-slate-50 p-4
+                   dark:border-slate-800 dark:bg-slate-900 xl:block"
       >
-        <h2 className="text-sm font-semibold">上下文面板</h2>
-        <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
-          本轮命中记忆、上下文组装预算与检索调试视图将在 M-F4 交付。
-        </p>
+        <ContextPanel />
       </aside>
     </div>
   );
