@@ -1,0 +1,186 @@
+{
+  "meta": {
+    "label": "fix_v4",
+    "generated_at": "2026-09-20T05:41:47.296559+00:00",
+    "samples": {
+      "long_turn": 2,
+      "memory_hit": 20,
+      "conflict": 8,
+      "task_continuity": 4
+    },
+    "errors": {
+      "long_turn": [],
+      "memory_hit": [],
+      "conflict": [],
+      "task_continuity": []
+    },
+    "judge_effective": {
+      "context_precision": 2,
+      "hallucination": 20
+    },
+    "token_note": "actual_avg=2475 baseline_avg≈3415（全量历史字符上界近似；绝对值仅供参考，以 A/B 相对变化为主）"
+  },
+  "metrics": {
+    "memory_recall_at_5": 0.35,
+    "memory_precision": 0.9887640449438202,
+    "context_precision": 0.9375,
+    "long_turn_consistency": 0.0,
+    "fact_conflict_rate": 0.0,
+    "hallucination_rate": 0.85,
+    "token_savings": 0.2753817889539557,
+    "p95_ttfb_ms": 1424.212055006501,
+    "p95_e2e_ms": 110780.31260499047,
+    "task_continuity": 0.75
+  },
+  "auxiliary": {
+    "conflict_answer_accuracy": 0.5,
+    "long_turn_assert": "0/2",
+    "task_assert": "3/4",
+    "suite_rows": {
+      "memory_hit": [
+        {
+          "id": "mh-02",
+          "wait_s": 727.6,
+          "recall5": true
+        },
+        {
+          "id": "mh-03",
+          "wait_s": 722.5,
+          "recall5": true
+        },
+        {
+          "id": "mh-04",
+          "wait_s": 321.0,
+          "recall5": false
+        },
+        {
+          "id": "mh-01",
+          "wait_s": 0.4,
+          "recall5": false
+        },
+        {
+          "id": "mh-05",
+          "wait_s": 0.4,
+          "recall5": true
+        },
+        {
+          "id": "mh-08",
+          "wait_s": 975.5,
+          "recall5": true
+        },
+        {
+          "id": "mh-07",
+          "wait_s": 0.4,
+          "recall5": true
+        },
+        {
+          "id": "mh-11",
+          "wait_s": -1.0,
+          "recall5": false
+        },
+        {
+          "id": "mh-10",
+          "wait_s": -1.0,
+          "recall5": false
+        },
+        {
+          "id": "mh-09",
+          "wait_s": 1155.2,
+          "recall5": false
+        },
+        {
+          "id": "mh-12",
+          "wait_s": -1.0,
+          "recall5": false
+        },
+        {
+          "id": "mh-13",
+          "wait_s": 0.4,
+          "recall5": false
+        },
+        {
+          "id": "mh-14",
+          "wait_s": -1.0,
+          "recall5": false
+        },
+        {
+          "id": "mh-15",
+          "wait_s": -1.0,
+          "recall5": false
+        },
+        {
+          "id": "mh-17",
+          "wait_s": -1.0,
+          "recall5": false
+        },
+        {
+          "id": "mh-06",
+          "wait_s": 1037.1,
+          "recall5": true
+        },
+        {
+          "id": "mh-16",
+          "wait_s": 0.4,
+          "recall5": false
+        },
+        {
+          "id": "mh-20",
+          "wait_s": -1.0,
+          "recall5": false
+        },
+        {
+          "id": "mh-19",
+          "wait_s": -1.0,
+          "recall5": false
+        },
+        {
+          "id": "mh-18",
+          "wait_s": 0.4,
+          "recall5": true
+        }
+      ],
+      "conflict": [
+        {
+          "id": "cf-01",
+          "wait_s": -1.0,
+          "answer": true
+        },
+        {
+          "id": "cf-04",
+          "wait_s": -1.0,
+          "answer": false
+        },
+        {
+          "id": "cf-03",
+          "wait_s": 0.1,
+          "answer": true
+        },
+        {
+          "id": "cf-02",
+          "wait_s": -1.0,
+          "answer": false
+        },
+        {
+          "id": "cf-06",
+          "wait_s": -1.0,
+          "answer": true
+        },
+        {
+          "id": "cf-07",
+          "wait_s": -1.0,
+          "answer": false
+        },
+        {
+          "id": "cf-05",
+          "wait_s": 0.1,
+          "answer": true
+        },
+        {
+          "id": "cf-08",
+          "wait_s": -1.0,
+          "answer": false
+        }
+      ]
+    }
+  }
+}

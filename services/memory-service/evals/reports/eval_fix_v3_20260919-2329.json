@@ -1,0 +1,77 @@
+{
+  "meta": {
+    "label": "fix_v3",
+    "generated_at": "2026-09-19T15:29:15.714510+00:00",
+    "samples": {
+      "conflict": 5
+    },
+    "errors": {
+      "conflict": [
+        "cf-04: chat failed twice: HTTPStatusError: Server error '502 Bad Gateway' for url 'http://localhost:8100/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/502",
+        "cf-07: Server error '500 Internal Server Error' for url 'http://localhost:8100/api/context/preview'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500",
+        "cf-03: chat failed twice: HTTPStatusError: Server error '502 Bad Gateway' for url 'http://localhost:8100/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/502"
+      ]
+    },
+    "judge_effective": {
+      "context_precision": 0,
+      "hallucination": 0
+    },
+    "token_note": "actual_avg=1875 baseline_avg≈784（全量历史字符上界近似；绝对值仅供参考，以 A/B 相对变化为主）"
+  },
+  "metrics": {
+    "memory_recall_at_5": 0.0,
+    "memory_precision": 0.0,
+    "context_precision": 0.0,
+    "long_turn_consistency": 0.0,
+    "fact_conflict_rate": 0.2,
+    "hallucination_rate": 0.0,
+    "token_savings": -1.3916439834349892,
+    "p95_ttfb_ms": 0.0,
+    "p95_e2e_ms": 0.0,
+    "task_continuity": 0.0
+  },
+  "auxiliary": {
+    "conflict_answer_accuracy": 1.0,
+    "long_turn_assert": null,
+    "task_assert": null,
+    "suite_rows": {
+      "conflict": [
+        {
+          "id": "cf-05",
+          "wait_s": 40.6,
+          "answer": true
+        },
+        {
+          "id": "cf-01",
+          "wait_s": 0.2,
+          "answer": true
+        },
+        {
+          "id": "cf-06",
+          "wait_s": 80.9,
+          "answer": true
+        },
+        {
+          "id": "cf-02",
+          "wait_s": 0.2,
+          "answer": true
+        },
+        {
+          "id": "cf-07",
+          "wait_s": 70.8,
+          "answer": false
+        },
+        {
+          "id": "cf-03",
+          "wait_s": 0.2,
+          "answer": false
+        },
+        {
+          "id": "cf-08",
+          "wait_s": 141.6,
+          "answer": true
+        }
+      ]
+    }
+  }
+}

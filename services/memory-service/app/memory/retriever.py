@@ -12,6 +12,7 @@ import math
 import uuid
 from datetime import UTC, datetime
 
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -107,6 +108,18 @@ class MemoryRetriever:
         results = sorted(best_by_key.values(), key=lambda s: s.score, reverse=True)
         selected = results[: top_k or settings.retrieval_top_k]
 
-        # ---- 命中写回（hit_count 与 HIT 事件，commit 由调用方统一）----
-        await memory_repo.record_hits(db, [s.memory.id for s in selected])
+        # ---- 命中写回（独立事务 + 死锁防御，Fix 轮实锤后加固）----
+        # 原实现 commit 由调用方统一，hit_count UPDATE 的行锁贯穿整个 LLM 生成期，
+        # 与后台抽取管线的逐候选 UPDATE 交叉形成死锁（死锁三环日志实锤），chat
+        # 直接 502 / preview 500。三层防御：①record_hits 内 sorted 锁序归一；
+        # ②检索内立即 commit，锁窗口缩至毫秒级；③DBAPIError 降级为告警——
+        # 命中统计是增强项，绝不阻断检索与对话主链路（expire_on_commit=False，
+        # commit 不影响 selected 后续属性读取）。
+        hit_ids = sorted(s.memory.id for s in selected)
+        try:
+            await memory_repo.record_hits(db, hit_ids)
+            await db.commit()
+        except DBAPIError as exc:
+            await db.rollback()
+            logger.warning("record_hits_degraded ws=%s error=%s", ws_id, exc)
         return selected

@@ -14,11 +14,13 @@ Fake Embedding 用 1024 维单位正交基向量：任意两个不同基向量�
 
 import hashlib
 import json
+import math
 import time
 import uuid
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session_factory
@@ -45,6 +47,20 @@ def _basis(seed: int) -> list[float]:
     """构造单位正交基向量（第 seed 维为 1，其余 0）。"""
     vector = [0.0] * EMBEDDING_DIM
     vector[seed % EMBEDDING_DIM] = 1.0
+    return vector
+
+
+def _mixed(seed_a: int, seed_b: int, weight: float) -> list[float]:
+    """构造与基 a 余弦相似度为 weight 的单位向量（a/b 为不同正交基序号）。
+
+    Args:
+        seed_a: 主基序号（目标相似度相对该基）。
+        seed_b: 副基序号（与 a 正交，用于补齐模长）。
+        weight: 与基 a 的目标余弦相似度（0~1）。
+    """
+    vector = [0.0] * EMBEDDING_DIM
+    vector[seed_a % EMBEDDING_DIM] = weight
+    vector[seed_b % EMBEDDING_DIM] = math.sqrt(1 - weight * weight)
     return vector
 
 
@@ -512,5 +528,262 @@ async def test_retriever_degrades_without_embedding_service() -> None:
             db, ws_id=ws_id, user_id=user_id, query="任意"
         )
         assert hits == []
+    finally:
+        await db.close()
+
+
+# ---- 评测优化轮（Fix A/B/D）----
+
+
+async def test_known_keys_injected_into_extract_prompt() -> None:
+    """Fix B：既有 active key 注入抽取 prompt，引导 LLM 复用命名。"""
+    db, ws_id, user_id, sid = await _prepare()
+    try:
+        await memory_repo.create_memory(
+            db,
+            ws_id=ws_id,
+            user_id=user_id,
+            memory_type=MemoryType.SEMANTIC,
+            key="contact.phone",
+            content="用户手机号 13800000001",
+            confidence=0.9,
+            importance=0.8,
+            embedding=_basis(0),
+        )
+        await db.commit()
+
+        llm = FakeJsonLLM([_fact_json("contact.email", "用户邮箱 a@b.com")])
+        embedding = FakeEmbedding()
+        embedding.register("用户邮箱 a@b.com", _basis(1))  # 与旧条正交：不触发冲突路径
+        written = await _pipeline(llm, embedding).run(
+            db,
+            ws_id=ws_id,
+            user_id=user_id,
+            session_id=sid,
+            messages=_round_messages("我邮箱是 a@b.com"),
+        )
+        assert len(written) == 1
+        # 抽取调用的 system prompt 中出现既有 key（复用规则生效）
+        system = llm.calls[0][0]["content"]
+        assert "contact.phone" in system
+        assert "复用已有 key" in system
+    finally:
+        await db.close()
+
+
+async def test_suspect_conflict_layer_supersedes() -> None:
+    """Fix A：疑似冲突层（0.80 ≤ sim < 0.92）命中 → 仲裁 supersede 生效。"""
+    db, ws_id, user_id, sid = await _prepare()
+    try:
+        llm = FakeJsonLLM(
+            [
+                _fact_json("profile.phone", "用户手机号 13911112222"),
+                '{"action": "supersede"}',
+            ]
+        )
+        embedding = FakeEmbedding()
+        # 新事实与旧条相似度 0.85：低于判重阈值（不 MERGE）但落入疑似冲突层
+        suspect_vector = _mixed(10, 11, 0.85)
+        embedding.register("用户手机号 13911112222", suspect_vector)
+        old = await memory_repo.create_memory(
+            db,
+            ws_id=ws_id,
+            user_id=user_id,
+            memory_type=MemoryType.SEMANTIC,
+            key="contact.phone",
+            content="用户手机号 13800000001",
+            confidence=0.8,
+            importance=0.7,
+            embedding=_basis(10),
+        )
+        await db.commit()
+
+        written = await _pipeline(llm, embedding).run(
+            db,
+            ws_id=ws_id,
+            user_id=user_id,
+            session_id=sid,
+            messages=_round_messages("我换手机号了，13911112222"),
+        )
+        assert len(written) == 1
+        new = written[0]
+        assert new.status == MemoryStatus.ACTIVE
+        assert new.supersedes_id == old.id  # 版本链挂上：仲裁 supersede 生效
+        old_status = (
+            await db.execute(select(Memory.status).where(Memory.id == old.id))
+        ).scalar_one()
+        assert old_status == MemoryStatus.SUPERSEDED
+    finally:
+        await db.close()
+
+
+async def test_suspect_conflict_merge_downgraded_to_coexist() -> None:
+    """Fix A：疑似冲突层命中且仲裁判 merge → 降级 COEXIST（防误合并）。"""
+    db, ws_id, user_id, sid = await _prepare()
+    try:
+        llm = FakeJsonLLM(
+            [
+                _fact_json("profile.city.detail", "用户常住在杭州西湖区"),
+                '{"action": "merge", "merged_content": "合并内容", "merged_confidence": 0.9}',
+            ]
+        )
+        embedding = FakeEmbedding()
+        suspect_vector = _mixed(20, 21, 0.85)
+        embedding.register("用户常住在杭州西湖区", suspect_vector)
+        old = await memory_repo.create_memory(
+            db,
+            ws_id=ws_id,
+            user_id=user_id,
+            memory_type=MemoryType.SEMANTIC,
+            key="profile.city",
+            content="用户住在杭州",
+            confidence=0.8,
+            importance=0.7,
+            embedding=_basis(20),
+        )
+        await db.commit()
+
+        written = await _pipeline(llm, embedding).run(
+            db,
+            ws_id=ws_id,
+            user_id=user_id,
+            session_id=sid,
+            messages=_round_messages("我常住在西湖区"),
+        )
+        assert len(written) == 1
+        new = written[0]
+        # 双条 conflicted：MERGE 被降级，未写入 merged_content
+        assert new.status == MemoryStatus.CONFLICTED
+        assert new.content == "用户常住在杭州西湖区"
+        old_content = (
+            await db.execute(select(Memory.content).where(Memory.id == old.id))
+        ).scalar_one()
+        assert old_content == "用户住在杭州"  # 旧条未被合并改写
+        assert new.supersedes_id is None
+    finally:
+        await db.close()
+
+
+class _FakeDeadlockOrig(Exception):
+    """模拟 asyncpg 死锁原始异常（sqlstate=40P01，供 _is_deadlock 识别）。"""
+
+    sqlstate = "40P01"
+
+
+async def test_deadlock_detected_retried_once() -> None:
+    """Fix D：upsert 死锁异常 → 回滚重试一次后成功写入。"""
+    db, ws_id, user_id, sid = await _prepare()
+    try:
+
+        class FlakyPipeline(ExtractPipeline):
+            """首次 upsert 抛 PG 死锁 DBAPIError 的被测管线。"""
+
+            def __init__(self, **kwargs: object) -> None:
+                super().__init__(**kwargs)  # type: ignore[arg-type]
+                self.upsert_calls = 0
+
+            async def _upsert_one(self, db: AsyncSession, **kwargs: object) -> Memory | None:
+                """首次调用注入死锁异常，之后走正常路径。"""
+                self.upsert_calls += 1
+                if self.upsert_calls == 1:
+                    raise DBAPIError("模拟死锁（测试注入）", None, _FakeDeadlockOrig())
+                return await super()._upsert_one(db, **kwargs)  # type: ignore[arg-type]
+
+        llm = FakeJsonLLM([_fact_json("skill.langgraph", "用户熟悉 LangGraph")])
+        embedding = FakeEmbedding()
+        pipeline = FlakyPipeline(
+            extractor=MemoryExtractor(llm),
+            deduplicator=MemoryDeduplicator(),
+            resolver=ConflictResolver(llm),
+            embedding=embedding,
+        )
+        written = await pipeline.run(
+            db,
+            ws_id=ws_id,
+            user_id=user_id,
+            session_id=sid,
+            messages=_round_messages("我最近在用 LangGraph 开发"),
+        )
+        assert pipeline.upsert_calls == 2  # 首次失败 + 重试成功
+        assert len(written) == 1
+        assert written[0].status == MemoryStatus.ACTIVE
+    finally:
+        await db.close()
+
+
+async def test_retrieve_degrades_when_hit_write_deadlocks(monkeypatch) -> None:
+    """Fix 轮加固：命中写回遇 PG 死锁（40P01）降级为告警，检索结果照常返回。
+
+    实机取证：record_hits 批量 UPDATE 与抽取管线交叉死锁曾把整个 chat
+    请求炸成 502 / preview 500——命中统计是增强项，绝不阻断检索主链路。
+    """
+    db, ws_id, user_id, sid = await _prepare()
+    try:
+        await memory_repo.create_memory(
+            db,
+            ws_id=ws_id,
+            user_id=user_id,
+            memory_type=MemoryType.SEMANTIC,
+            key="profile.city",
+            content="用户住在杭州",
+            confidence=0.9,
+            importance=0.8,
+            embedding=_basis(0),
+        )
+        await db.commit()
+
+        async def _deadlock(*args: object, **kwargs: object) -> object:
+            """替换 record_hits：模拟与抽取管线交叉成环的死锁。"""
+            raise DBAPIError("模拟命中写回死锁（测试注入）", None, _FakeDeadlockOrig())
+
+        monkeypatch.setattr(memory_repo, "record_hits", _deadlock)
+        embedding = FakeEmbedding()
+        embedding.register("用户住在哪座城市", _basis(0))
+        hits = await MemoryRetriever(embedding).retrieve(  # type: ignore[arg-type]
+            db, ws_id=ws_id, user_id=user_id, query="用户住在哪座城市"
+        )
+        assert len(hits) == 1  # 统计写失败不阻断检索
+    finally:
+        await db.close()
+
+
+async def test_record_hits_out_of_order_ids_persisted() -> None:
+    """record_hits 乱序传入 ID 按内部排序逐行更新：hit_count 全 +1 且 HIT 事件齐全。"""
+    db, ws_id, user_id, sid = await _prepare()
+    try:
+        first = await memory_repo.create_memory(
+            db,
+            ws_id=ws_id,
+            user_id=user_id,
+            memory_type=MemoryType.SEMANTIC,
+            key="a.first",
+            content="第一条",
+            confidence=0.9,
+            importance=0.5,
+        )
+        second = await memory_repo.create_memory(
+            db,
+            ws_id=ws_id,
+            user_id=user_id,
+            memory_type=MemoryType.SEMANTIC,
+            key="b.second",
+            content="第二条",
+            confidence=0.9,
+            importance=0.5,
+        )
+        await db.commit()
+
+        updated = await memory_repo.record_hits(db, [second.id, first.id])  # 故意乱序
+        await db.commit()
+        assert updated == 2
+        for mid in (first.id, second.id):
+            row = (
+                await db.execute(
+                    select(Memory.hit_count, Memory.last_hit_at).where(Memory.id == mid)
+                )
+            ).one()
+            assert row.hit_count == 1
+            assert row.last_hit_at is not None
+        assert MemoryEventType.HIT in [e.event_type for e in await _events_of(db, first.id)]
     finally:
         await db.close()

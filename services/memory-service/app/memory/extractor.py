@@ -8,6 +8,7 @@ json_mode 请求 + 容错解析（markdown 围栏剥离）+ 字段校验；
 import json
 import logging
 import uuid
+from collections.abc import Sequence
 from typing import Any
 
 from app.llm.client import LLMClient
@@ -42,13 +43,19 @@ class MemoryExtractor:
         self._llm = llm
 
     async def extract(
-        self, messages: list[tuple[uuid.UUID, str, str]], *, window: int = 20
+        self,
+        messages: list[tuple[uuid.UUID, str, str]],
+        *,
+        window: int = 20,
+        known_keys: Sequence[str] = (),
     ) -> list[ExtractedFact]:
         """抽取一轮对话中的候选事实。
 
         Args:
             messages: (message_id, role, content) 三元组列表，时间正序。
             window: 参与抽取的最近消息条数上限（控制 prompt 长度）。
+            known_keys: 用户既有 active 记忆的 key 列表（注入 prompt 引导
+                复用，稳定 key 命名使精确判重与仲裁链路生效）。
 
         Returns:
             抽取事实列表（可能为空 —— 无值得记住的内容是正常结果）。
@@ -59,7 +66,17 @@ class MemoryExtractor:
         """
         recent = messages[-window:]
         transcript = "\n".join(f"[{mid}] {role}: {content}" for mid, role, content in recent)
-        llm_messages = build_extract_messages(transcript, key_examples=_KEY_EXAMPLES)
+        extra_rules = ""
+        if known_keys:
+            keys_text = ", ".join(sorted(set(known_keys))[:64])
+            extra_rules = (
+                "用户记忆库中已有的 key（同一主题的事实必须复用已有 key，仅更新内容；"
+                f"例如换手机号仍写 contact.phone）：{keys_text}。"
+                "确属全新主题才创建新 key。"
+            )
+        llm_messages = build_extract_messages(
+            transcript, key_examples=_KEY_EXAMPLES, extra_rules=extra_rules
+        )
         content, _usage = await self._llm.complete(llm_messages, json_mode=True)
         return self._parse(content)
 

@@ -367,6 +367,29 @@ class EvalClient:
         turns = body.get("turns") or 0
         return body["totals"]["prompt_tokens"] / turns if turns else 0.0
 
+    async def memories_q(self, keyword: str | None = None, *, limit: int = 20) -> list[dict]:
+        """查记忆列表（GET /api/memories；keyword 为 None 时不带 q 过滤拉全量）。
+
+        Args:
+            keyword: content/key 的服务端 ILIKE 过滤词；None 拉全量（等待阶段
+                批量匹配多个关键词时一次拉取，本地 substring 判定，省 HTTP 轮次）。
+            limit: 分页大小（批量等待时建议调大，覆盖整个评测工作区的条目数）。
+
+        Returns:
+            记忆条目 dict 列表（无 LLM/embedding 成本）。
+        """
+        await self._ensure_fresh_token()
+        params: dict = {"workspace_id": self.workspace_id, "limit": limit}
+        if keyword is not None:
+            params["q"] = keyword
+        resp = await self.client.get(
+            f"{self.base_url}/api/memories",
+            headers={"Authorization": f"Bearer {self.token}"},
+            params=params,
+        )
+        resp.raise_for_status()
+        return resp.json()["items"]
+
 
 # ---- 各套件执行 ----
 
@@ -388,14 +411,83 @@ async def _jctx(ec: EvalClient) -> JudgeContext:
     return JudgeContext(base_url=ec.base_url, token=ec.token, workspace_id=ec.workspace_id)
 
 
+async def _wait_keywords_visible(
+    ec: EvalClient,
+    keywords: list[str],
+    *,
+    timeout: float = 1200.0,
+    interval: float = 5.0,
+) -> dict[str, float]:
+    """批量轮询等待多个事实关键词落库可见（评测口径对齐异步写路径）。
+
+    抽取管线是后台异步链路且同用户串行（Fix D per-user 锁），probe 采集
+    注入前必须确保事实已落库，否则指标混入队列延迟噪声（Fix 轮实测：
+    抽取产出正确但入队执行晚于 probe 3 分钟，被判 FAIL）。批量版为
+    两阶段回放服务：先回放全部场景（不等待），再统一等待所有事实
+    可见——逐行等待时 120s 超时追不上串行队列的尾部积压
+    （memory_hit 20 行约 140 轮 chat，队列深度可达 20 分钟）。
+
+    轮询方式：每个未可见 keyword 独立 GET /api/memories?q=（并发 8），
+    每 interval 秒一轮；不做全量拉取，规避列表接口 limit=100 上限在
+    全量评测（条目 100+）下的漏判。超时未可见的关键词照常继续，
+    由指标如实反映缺库。
+
+    Args:
+        ec: 评测客户端。
+        keywords: 期望出现在记忆 content 中的核心关键词列表（自动去重）。
+        timeout: 整批最长等待秒数（覆盖串行抽取队列最坏积压）。
+        interval: 轮询间隔秒数。
+
+    Returns:
+        {keyword: 等待秒数}——仅含成功可见的关键词；超时未可见的不在
+        返回值中（以 print 告警）。
+    """
+    pending = {kw: time.monotonic() for kw in dict.fromkeys(keywords)}
+    done: dict[str, float] = {}
+    sem = asyncio.Semaphore(8)
+    deadline = time.monotonic() + timeout
+
+    async def _check(kw: str) -> bool:
+        """单关键词可见性探测（HTTP 异常视为不可见，下轮重试）。
+
+        Args:
+            kw: 待探测关键词。
+
+        Returns:
+            该关键词已出现在任一记忆 content 中为 True。
+        """
+        async with sem:
+            try:
+                items = await ec.memories_q(kw)
+            except httpx.HTTPError:
+                return False
+        return any(kw in (it.get("content") or "") for it in items)
+
+    while pending and time.monotonic() < deadline:
+        snapshot = list(pending)
+        results = await asyncio.gather(*(_check(kw) for kw in snapshot))
+        # 两输入同源等长（gather 结果与快照一一对应），strict=True 锁死该约定
+        for kw, ok in zip(snapshot, results, strict=True):
+            if ok:
+                done[kw] = time.monotonic() - pending.pop(kw)
+        if pending:
+            await asyncio.sleep(interval)
+    for kw in pending:
+        print(f"  [wait] keyword={kw!r} not visible after {timeout:.0f}s")
+    return done
+
+
 async def run_long_turn(ec: EvalClient, groups: list[dict]) -> SuiteOutcome:
     """长对话集：逐组回放 → final probe 流式断言 + judge。
 
     产出：Long-turn Consistency、Context Precision（judge）、P95 ttfb/e2e 采样。
+    逐行明细（id/未命中关键词组/注入条数/answer 截断）随 extra["rows"] 入库，
+    断言失败时可区分"上下文未注入"与"注入了但模型没答"两类根因。
     """
     outcome = SuiteOutcome(name="long_turn")
     ttfb_samples: list[float] = []
     e2e_samples: list[float] = []
+    row_detail: list[dict[str, object]] = []
     passed = total = 0
     for g in groups:
         messages: list[dict[str, str]] = []
@@ -412,7 +504,13 @@ async def run_long_turn(ec: EvalClient, groups: list[dict]) -> SuiteOutcome:
             injected = parse_injected_memories(await ec.preview(session_id, probe["u"]))
             r = await ec.chat(messages, session_id=session_id, stream=True)
             answer = r["content"]
-            ok = all(any(kw in answer for kw in group) for group in probe["assert_contains"])
+            # 未命中组：整组关键词都未出现的断言组（组内任一命中即视为命中）
+            missed = [
+                " / ".join(group)
+                for group in probe["assert_contains"]
+                if not any(kw in answer for kw in group)
+            ]
+            ok = not missed
             passed += 1 if ok else 0
             total += 1
             ttfb_samples.append(r["ttfb_ms"])
@@ -423,8 +521,21 @@ async def run_long_turn(ec: EvalClient, groups: list[dict]) -> SuiteOutcome:
                 )
             )
             outcome.samples += 1
+            row_detail.append(
+                {
+                    "id": g["group_id"],
+                    "assert": ok,
+                    "missed": missed,
+                    "injected": len(injected),
+                    "answer": answer[:400],
+                    "ttfb_ms": round(r["ttfb_ms"], 1),
+                }
+            )
             status = "PASS" if ok else "FAIL"
-            print(f"  [long_turn] {g['group_id']} assert={status} ttfb={r['ttfb_ms']:.0f}ms")
+            print(
+                f"  [long_turn] {g['group_id']} assert={status} "
+                f"injected={len(injected)} ttfb={r['ttfb_ms']:.0f}ms"
+            )
         except (RuntimeError, httpx.HTTPError) as exc:
             outcome.errors.append(f"{g['group_id']}: {exc}")
     outcome.extra = {
@@ -432,14 +543,29 @@ async def run_long_turn(ec: EvalClient, groups: list[dict]) -> SuiteOutcome:
         "assert_detail": f"{passed}/{total}",
         "ttfb_ms": ttfb_samples,
         "e2e_ms": e2e_samples,
+        "rows": row_detail,
     }
     return outcome
 
 
-async def run_memory_hit(ec: EvalClient, rows: list[dict]) -> SuiteOutcome:
-    """记忆命中集：录入 → 干扰 → probe（条间并发 4）。
+async def run_memory_hit(
+    ec: EvalClient, rows: list[dict], *, wait_timeout: float = 1200.0
+) -> SuiteOutcome:
+    """记忆命中集：两阶段执行——回放全部 → 批量等待落库 → 采集 probe。
 
     产出：Memory Recall@5、Memory Precision、Hallucination（judge）。
+    两阶段原因：抽取是同用户串行的后台队列，若逐行"回放完立即等待",
+    后面场景的抽取排在队列深处（20 行回放约 140 轮 chat，尾部积压可达
+    20 分钟），逐行 120s 等待必然超时误判；先全部回放、再统一等待，
+    等待期间无新负载注入，队列持续消化，整体收敛时间可控。
+
+    Args:
+        ec: 评测客户端。
+        rows: memory_hit 数据集行。
+        wait_timeout: 批量等待事实落库的总超时秒数。
+
+    Returns:
+        套件结果（extra 含 recall_at_5/precision/rows 逐行明细）。
     """
     outcome = SuiteOutcome(name="memory_hit")
     sem = asyncio.Semaphore(4)
@@ -448,9 +574,31 @@ async def run_memory_hit(ec: EvalClient, rows: list[dict]) -> SuiteOutcome:
     judge_raw: list[dict] = []
     errors: list[str] = []
     samples = 0
+    row_detail: list[dict] = []
 
-    async def one(row: dict) -> None:
-        nonlocal samples
+    @dataclass
+    class Pending:
+        """回放完成、待等待落库与采集 probe 的场景。
+
+        Attributes:
+            row: 数据集行（含 expected/probe/traps）。
+            session_id: 回放会话 ID（probe 采集与回答复用）。
+            messages: 完整多轮历史（probe 回答入参）。
+        """
+
+        row: dict
+        session_id: str
+        messages: list[dict[str, str]]
+
+    async def replay_one(row: dict) -> Pending | None:
+        """阶段1：回放 录入 → gap 干扰（probe 留到阶段3）。
+
+        Args:
+            row: 数据集行。
+
+        Returns:
+            回放产物；失败记录错误并返回 None。
+        """
         async with sem:
             try:
                 r1 = await ec.chat([{"role": "user", "content": row["fact_turn"]}])
@@ -471,42 +619,106 @@ async def run_memory_hit(ec: EvalClient, rows: list[dict]) -> SuiteOutcome:
                         ]
                     )
                 messages.append({"role": "user", "content": row["probe"]})
-                injected = parse_injected_memories(await ec.preview(session_id, row["probe"]))
-                rp = await ec.chat(messages, session_id=session_id)
+                return Pending(row=row, session_id=session_id, messages=messages)
+            except (RuntimeError, httpx.HTTPError) as exc:
+                errors.append(f"{row['fact_id']}: {exc}")
+                return None
+
+    pendings = [p for p in await asyncio.gather(*(replay_one(r) for r in rows)) if p]
+
+    # 阶段2：批量等待全部事实落库（等待期间无新 chat 负载，队列持续消化）
+    waits = await _wait_keywords_visible(
+        ec, [p.row["expected"][0] for p in pendings], timeout=wait_timeout
+    )
+
+    async def probe_one(p: Pending) -> None:
+        """阶段3：preview 采集注入 → probe 回答 → judge。
+
+        Args:
+            p: 阶段1 产物。
+        """
+        nonlocal samples
+        async with sem:
+            row = p.row
+            hit = False
+            try:
+                injected = parse_injected_memories(await ec.preview(p.session_id, row["probe"]))
+                rp = await ec.chat(p.messages, session_id=p.session_id)
                 probes.append((injected, row["expected"]))
                 trap_probes.append((injected, row.get("traps") or []))
                 jctx = await _jctx(ec)
                 judge_raw.append(await judge_hallucination(jctx, row["probe"], rp["content"]))
                 samples += 1
                 hit = any(all(kw in i.content for kw in row["expected"]) for i in injected[:5])
-                print(f"  [memory_hit] {row['fact_id']} recall5={'PASS' if hit else 'FAIL'}")
             except (RuntimeError, httpx.HTTPError) as exc:
                 errors.append(f"{row['fact_id']}: {exc}")
+            row_detail.append(
+                {
+                    "id": row["fact_id"],
+                    "wait_s": round(waits.get(row["expected"][0], -1.0), 1),
+                    "recall5": hit,
+                }
+            )
+            print(f"  [memory_hit] {row['fact_id']} recall5={'PASS' if hit else 'FAIL'}")
 
-    await asyncio.gather(*(one(r) for r in rows))
+    await asyncio.gather(*(probe_one(p) for p in pendings))
     outcome.samples = samples
     outcome.errors = errors
     outcome.judge_raw = judge_raw
     outcome.extra = {
         "recall_at_5": recall_at_5(probes),
         "precision": memory_precision(trap_probes),
+        "rows": row_detail,
     }
     return outcome
 
 
-async def run_conflict(ec: EvalClient, rows: list[dict]) -> SuiteOutcome:
-    """冲突集：旧事实 → 干扰 → 新事实 → 干扰 → probe。
+async def run_conflict(
+    ec: EvalClient, rows: list[dict], *, wait_timeout: float = 1200.0
+) -> SuiteOutcome:
+    """冲突集：两阶段执行——回放全部（旧事实→干扰→新事实）→ 批量等待落库 → 采集 probe。
 
     产出：Fact Conflict Rate（注入并存）、回答正确率（辅助观察）。
+    两阶段原因同 run_memory_hit：串行抽取队列下逐行等待追不上尾部积压。
+
+    Args:
+        ec: 评测客户端。
+        rows: conflict 数据集行。
+        wait_timeout: 批量等待新事实落库的总超时秒数。
+
+    Returns:
+        套件结果（extra 含 conflict_rate/answer_accuracy/rows 逐行明细）。
     """
     outcome = SuiteOutcome(name="conflict")
     sem = asyncio.Semaphore(4)
     coexist_probes: list[tuple[list, str, str]] = []
     answer_ok = answer_total = 0
     errors: list[str] = []
+    row_detail: list[dict] = []
 
-    async def one(row: dict) -> None:
-        nonlocal answer_ok, answer_total
+    @dataclass
+    class Pending:
+        """回放完成、待等待落库与采集 probe 的场景。
+
+        Attributes:
+            row: 数据集行（含 old_kw/new_kw/probe/expected）。
+            session_id: 回放会话 ID。
+            messages: 完整多轮历史（probe 回答入参）。
+        """
+
+        row: dict
+        session_id: str
+        messages: list[dict[str, str]]
+
+    async def replay_one(row: dict) -> Pending | None:
+        """阶段1：回放 旧事实 → 干扰1 → 新事实 → 干扰2..N（probe 留到阶段3）。
+
+        Args:
+            row: 数据集行。
+
+        Returns:
+            回放产物；失败记录错误并返回 None。
+        """
         async with sem:
             try:
                 r1 = await ec.chat([{"role": "user", "content": row["old_turn"]}])
@@ -533,22 +745,53 @@ async def run_conflict(ec: EvalClient, rows: list[dict]) -> SuiteOutcome:
                         ]
                     )
                 messages.append({"role": "user", "content": row["probe"]})
-                injected = parse_injected_memories(await ec.preview(session_id, row["probe"]))
-                rp = await ec.chat(messages, session_id=session_id)
+                return Pending(row=row, session_id=session_id, messages=messages)
+            except (RuntimeError, httpx.HTTPError) as exc:
+                errors.append(f"{row['conflict_id']}: {exc}")
+                return None
+
+    pendings = [p for p in await asyncio.gather(*(replay_one(r) for r in rows)) if p]
+
+    # 阶段2：批量等待全部新事实落库（含 supersede/仲裁完成的最终状态）
+    waits = await _wait_keywords_visible(
+        ec, [p.row["new_kw"] for p in pendings], timeout=wait_timeout
+    )
+
+    async def probe_one(p: Pending) -> None:
+        """阶段3：preview 采集注入 → probe 回答 → 并存/断言判定。
+
+        Args:
+            p: 阶段1 产物。
+        """
+        nonlocal answer_ok, answer_total
+        async with sem:
+            row = p.row
+            ok = False
+            try:
+                injected = parse_injected_memories(await ec.preview(p.session_id, row["probe"]))
+                rp = await ec.chat(p.messages, session_id=p.session_id)
                 coexist_probes.append((injected, row["old_kw"], row["new_kw"]))
                 ok = any(kw in rp["content"] for kw in row["expected"])
                 answer_ok += 1 if ok else 0
                 answer_total += 1
-                print(f"  [conflict] {row['conflict_id']} answer={'PASS' if ok else 'FAIL'}")
             except (RuntimeError, httpx.HTTPError) as exc:
                 errors.append(f"{row['conflict_id']}: {exc}")
+            row_detail.append(
+                {
+                    "id": row["conflict_id"],
+                    "wait_s": round(waits.get(row["new_kw"], -1.0), 1),
+                    "answer": ok,
+                }
+            )
+            print(f"  [conflict] {row['conflict_id']} answer={'PASS' if ok else 'FAIL'}")
 
-    await asyncio.gather(*(one(r) for r in rows))
+    await asyncio.gather(*(probe_one(p) for p in pendings))
     outcome.samples = answer_total
     outcome.errors = errors
     outcome.extra = {
         "conflict_rate": conflict_rate(coexist_probes),
         "answer_accuracy": consistency(answer_ok, answer_total),
+        "rows": row_detail,
     }
     return outcome
 
@@ -648,6 +891,9 @@ def build_report(
             "task_assert": by["task_continuity"].extra.get("assert_detail")
             if "task_continuity" in by
             else None,
+            # 逐行明细（Fix 轮新增：wait_s=-1 表示等待超时未落库，是排查
+            # "FAIL=缺库还是检索失败"的关键证据，随报告入库）
+            "suite_rows": {o.name: o.extra.get("rows") for o in outcomes if o.extra.get("rows")},
         },
     }
 
@@ -692,6 +938,28 @@ def render_markdown(report: dict, baseline: dict | None) -> str:
         f"- judge 有效样本：{report['meta']['judge_effective']}",
         f"- 错误样本：{err_counts or '无'}",
         "",
+    ]
+    # 逐行明细（wait_s=-1 = 等待超时未落库，该行 FAIL 属队列延迟噪声而非检索失败；
+    # long_turn 无等待语义，渲染为断言明细表）
+    suite_rows = report["auxiliary"].get("suite_rows") or {}
+    for suite_name, rows in suite_rows.items():
+        if rows and "wait_s" in rows[0]:
+            lines.append(f"### {suite_name} 逐行明细")
+            lines += ["", "| 行 | 等待落库(s) | 判定 |", "|---|---|---|"]
+            for r in rows:
+                judge_key = "recall5" if "recall5" in r else "answer"
+                verdict = "PASS" if r[judge_key] else "FAIL"
+                wait_cell = f"{r['wait_s']:.1f}" if r["wait_s"] >= 0 else "超时"
+                lines.append(f"| {r['id']} | {wait_cell} | {verdict} |")
+        else:
+            lines.append(f"### {suite_name} 断言明细")
+            lines += ["", "| 行 | 未命中关键词组 | 注入条目 | 判定 |", "|---|---|---|---|"]
+            for r in rows:
+                verdict = "PASS" if r["assert"] else "FAIL"
+                missed_cell = "；".join(str(m) for m in r["missed"]) or "-"
+                lines.append(f"| {r['id']} | {missed_cell} | {r['injected']} | {verdict} |")
+        lines.append("")
+    lines += [
         "> 指标定义与口径见 docs/01 §8 与 evals/README.md；数字为真实链路实测。",
         "",
     ]
@@ -714,6 +982,12 @@ async def main() -> int:
     parser.add_argument("--username", default="evalbot")
     parser.add_argument("--password", default="evalbot-2026")
     parser.add_argument("--baseline", default=None, help="旧报告 JSON 路径（生成对比列）")
+    parser.add_argument(
+        "--wait-timeout",
+        type=float,
+        default=1200.0,
+        help="memory_hit/conflict 批量等待事实落库的总超时秒数（默认 1200）",
+    )
     args = parser.parse_args()
 
     suites = list(_DATASET_REQUIRED) if args.suite == "all" else [args.suite]
@@ -727,9 +1001,9 @@ async def main() -> int:
         if suite == "long_turn":
             outcomes.append(await run_long_turn(ec, rows))
         elif suite == "memory_hit":
-            outcomes.append(await run_memory_hit(ec, rows))
+            outcomes.append(await run_memory_hit(ec, rows, wait_timeout=args.wait_timeout))
         elif suite == "conflict":
-            outcomes.append(await run_conflict(ec, rows))
+            outcomes.append(await run_conflict(ec, rows, wait_timeout=args.wait_timeout))
         else:
             outcomes.append(await run_task_continuity(ec, rows))
 

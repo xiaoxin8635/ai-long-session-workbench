@@ -97,8 +97,11 @@ class Settings(BaseSettings):
     # ---- 记忆抽取/检索（M-04）----
     extract_min_confidence: float = 0.5  # 低于该置信度的抽取结果丢弃（控噪）
     dedup_similarity_threshold: float = 0.92  # 向量相似度判重阈值
+    # 疑似冲突召回阈值（低于判重阈值：仅送仲裁、禁 MERGE，Fix A）
+    conflict_similarity_threshold: float = 0.80
     retrieval_candidate_k: int = 20  # 向量召回候选数（重排前）
     retrieval_top_k: int = 8  # 最终返回条数
+    task_brief_max_session_messages: int = 6  # 任务简报仅在会话早期注入（消息总数 ≤ 该值）
 
     # ---- 向量库 ----
     vector_store: str = "pgvector"

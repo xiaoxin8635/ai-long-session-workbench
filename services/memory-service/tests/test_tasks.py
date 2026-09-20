@@ -13,7 +13,8 @@ from app.context.builder import ContextBuilder
 from app.context.schemas import SectionKey
 from app.db.session import get_session_factory
 from app.models.enums import MemberRole, MemoryType, TaskStatus
-from app.repositories import memory_repo, task_repo, user_repo, workspace_repo
+from app.repositories import memory_repo, message_repo, task_repo, user_repo, workspace_repo
+from app.services.session_service import SessionService
 
 _PASSWORD = "passw0rd123"
 
@@ -155,6 +156,51 @@ async def test_active_brief_injected_into_context(client: AsyncClient) -> None:
     assert "高优先任务" not in system  # 已完成任务不注入
     sem = next(s for s in assembled.sections if s.key == SectionKey.SEMANTIC)
     assert sem.included >= 1  # 任务简报条目计入 semantic 区块
+
+
+async def test_task_brief_only_in_early_session() -> None:
+    """Fix C：任务简报仅在会话早期（消息数 ≤ 阈值）注入，会话进行中停注。"""
+    async with get_session_factory()() as db:
+        user = await user_repo.create(
+            db, username=f"brieffix{uuid.uuid4().hex[:8]}", password_hash="x" * 60
+        )
+        ws = await workspace_repo.create(db, name="简报时机空间", owner_id=user.id)
+        await workspace_repo.add_member(db, ws_id=ws.id, user_id=user.id, role=MemberRole.OWNER)
+        session = await SessionService().create(db, ws_id=ws.id, user=user, title="简报时机")
+        await task_repo.create_task(
+            db, ws_id=ws.id, title="进行中的事", priority=1, due_date=None, related_session_ids=[]
+        )
+
+        class _FakeWM:
+            """窗口恒返回当前问题的假 Working Memory。"""
+
+            async def window(self, session_id: uuid.UUID, budget_tokens: int) -> list[dict]:
+                """单条用户消息窗口。"""
+                return [{"role": "user", "content": "继续上次的事"}]
+
+        builder = ContextBuilder(_FakeWM(), retriever=None, knowledge=None)
+
+        # 早期：0 条消息 → 简报注入（新会话开场场景）
+        early = await builder.build(
+            db, ws_id=ws.id, user_id=user.id, session_id=session.id, query="继续上次的事"
+        )
+        assert "未完成任务「进行中的事」" in early.messages[0]["content"]
+
+        # 后期：消息数超过阈值（6）→ 停注，让位真正的记忆检索
+        for i in range(7):
+            await message_repo.create(
+                db,
+                session_id=session.id,
+                role="user",
+                content=f"历史消息 {i}",
+                token_count=1,
+                metadata_={},
+            )
+        await db.commit()
+        late = await builder.build(
+            db, ws_id=ws.id, user_id=user.id, session_id=session.id, query="继续上次的事"
+        )
+        assert "未完成任务「进行中的事」" not in late.messages[0]["content"]
 
 
 async def test_unfinished_brief_ordering() -> None:

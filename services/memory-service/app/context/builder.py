@@ -37,7 +37,7 @@ from app.models.enums import MemoryType, TaskStatus
 from app.observability import tracing
 from app.rag.retriever import KnowledgeRetriever
 from app.rag.schemas import CitedChunk
-from app.repositories import memory_repo, session_repo, task_repo
+from app.repositories import memory_repo, message_repo, session_repo, task_repo
 
 logger = logging.getLogger(__name__)
 
@@ -367,22 +367,26 @@ class ContextBuilder:
                 )
         buckets[SectionKey.EPISODIC].extend(episodic)
 
-        # ②.2 任务简报（M-10 Task Continuity）：未完成任务以高优先级语义
-        # 候选注入（高优先在前），预算/裁剪与去重天然复用 semantic 桶管线
+        # ②.2 任务简报（M-10 Task Continuity）：仅在会话早期注入（消息总数
+        # ≤ 阈值，覆盖"新会话开场接着干"场景）；之后让位于真正的记忆检索，
+        # 避免固定简报长期挤占 semantic 桶的 top 名额（M-13 评测 Recall 根因）。
+        # score 0.85 低于 episodic 摘要 1.0，预算紧张时优先被裁剪。
         try:
-            for task in await task_repo.unfinished_brief(
-                db, ws_id=ws_id, limit=get_settings().task_brief_limit
-            ):
-                buckets[SectionKey.SEMANTIC].append(
-                    ContextItem(
-                        content=(
-                            f"未完成任务「{task.title}」（状态 {TaskStatus(task.status).value}，"
-                            f"优先级 {task.priority}）"
-                        ),
-                        source=f"task:{task.id}",
-                        score=0.95,
+            total_messages = await message_repo.count_by_session(db, session_id=session_id)
+            if total_messages <= get_settings().task_brief_max_session_messages:
+                for task in await task_repo.unfinished_brief(
+                    db, ws_id=ws_id, limit=get_settings().task_brief_limit
+                ):
+                    buckets[SectionKey.SEMANTIC].append(
+                        ContextItem(
+                            content=(
+                                f"未完成任务「{task.title}」"
+                                f"（状态 {TaskStatus(task.status).value}，优先级 {task.priority}）"
+                            ),
+                            source=f"task:{task.id}",
+                            score=0.85,
+                        )
                     )
-                )
         except Exception as exc:  # 任务简报失败不阻断装配（与检索降级同口径）
             logger.warning("context_task_brief_degraded error=%s", exc)
 

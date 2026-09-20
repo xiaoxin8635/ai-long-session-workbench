@@ -11,7 +11,7 @@
   - Memory Recall@5：期望关键词组命中注入记忆 top-5 的比例（目标 ≥ 80%）
   - Memory Precision：注入条目中非"陷阱事实"的占比（目标 ≥ 70%）
   - Long-turn Consistency：规则断言通过比例（目标 ≥ 90%）
-  - Fact Conflict Rate：新旧事实并存于注入上下文的比例（目标 ≤ 10%）
+  - Fact Conflict Rate：新旧事实以两条独立条目并存于注入上下文的比例（目标 ≤ 10%）
   - Token Cost / Turn：实际均值相对"全量历史塞入"基线的下降比例（目标 ≥ 40%）
   - P95 Latency：首 token / 端到端时延的 95 分位（目标 ≤ 2s / ≤ 8s）
   - Task Continuity：跨会话任务断言通过比例（目标 ≥ 80%）
@@ -142,7 +142,16 @@ def memory_precision(
 
 
 def conflict_rate(probes: list[tuple[list[InjectedItem], str, str]]) -> float:
-    """Fact Conflict Rate：新旧事实并存于同一探针注入上下文的比例。
+    """Fact Conflict Rate：新旧事实以"两条独立条目"并存于注入上下文的比例。
+
+    并存判定（Fix 轮口径修正）：存在条目 A 含 old_kw 且不含 new_kw，
+    且存在条目 B 含 new_kw 且不含 old_kw——即旧值与新值分别占据两条
+    独立条目（旧条未被替代、与新条同库注入）。
+
+    单条目内新旧同现不算并存：supersede/MERGE 后的新条目以背景口吻
+    提及旧值（如"旧号 138… 已注销""覆盖此前深圳偏好"）是良性改写，
+    恰是冲突消解的正确产物，Fix 轮实测此类误判曾把 6 行 probe 中
+    4 行误判并存（rate 0.667），库内实况全部为 supersede 成功。
 
     Args:
         probes: 每次探针的 (注入条目列表, 旧事实关键词, 新事实关键词) 元组。
@@ -154,9 +163,9 @@ def conflict_rate(probes: list[tuple[list[InjectedItem], str, str]]) -> float:
         return 0.0
     coexists = 0
     for injected, old_kw, new_kw in probes:
-        has_old = any(old_kw in item.content for item in injected)
-        has_new = any(new_kw in item.content for item in injected)
-        if has_old and has_new:
+        has_old_only = any(old_kw in i.content and new_kw not in i.content for i in injected)
+        has_new_only = any(new_kw in i.content and old_kw not in i.content for i in injected)
+        if has_old_only and has_new_only:
             coexists += 1
     return coexists / len(probes)
 

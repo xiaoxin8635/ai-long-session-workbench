@@ -59,10 +59,14 @@ class Duplicate:
     Attributes:
         memory: 库中的旧记忆条目。
         similarity: 相似度（key 精确命中时为 1.0；向量命中时为余弦相似度）。
+        strict: 是否为高置信判重（True=key 精确或相似度 ≥ 判重阈值，可 MERGE；
+            False=疑似冲突层命中（相似度介于判重与冲突阈值之间），仲裁结论
+            为 MERGE 时降级 COEXIST，防止同主题不同侧面被误合并）。
     """
 
     memory: Memory
     similarity: float
+    strict: bool = True
 
 
 class ConflictAction(StrEnum):

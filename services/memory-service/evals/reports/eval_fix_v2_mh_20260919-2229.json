@@ -1,0 +1,38 @@
+{
+  "meta": {
+    "label": "fix_v2_mh",
+    "generated_at": "2026-09-19T14:29:35.296266+00:00",
+    "samples": {
+      "memory_hit": 17
+    },
+    "errors": {
+      "memory_hit": [
+        "mh-03: Server error '500 Internal Server Error' for url 'http://localhost:8100/api/context/preview'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500",
+        "mh-04: Server error '500 Internal Server Error' for url 'http://localhost:8100/api/context/preview'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500",
+        "mh-08: chat failed twice: HTTPStatusError: Server error '502 Bad Gateway' for url 'http://localhost:8100/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/502"
+      ]
+    },
+    "judge_effective": {
+      "context_precision": 0,
+      "hallucination": 17
+    },
+    "token_note": "actual_avg=2110 baseline_avg≈961（全量历史字符上界近似；绝对值仅供参考，以 A/B 相对变化为主）"
+  },
+  "metrics": {
+    "memory_recall_at_5": 0.35294117647058826,
+    "memory_precision": 1.0,
+    "context_precision": 0.0,
+    "long_turn_consistency": 0.0,
+    "fact_conflict_rate": 0.0,
+    "hallucination_rate": 0.8235294117647058,
+    "token_savings": -1.1960416307429007,
+    "p95_ttfb_ms": 0.0,
+    "p95_e2e_ms": 0.0,
+    "task_continuity": 0.0
+  },
+  "auxiliary": {
+    "conflict_answer_accuracy": null,
+    "long_turn_assert": null,
+    "task_assert": null
+  }
+}

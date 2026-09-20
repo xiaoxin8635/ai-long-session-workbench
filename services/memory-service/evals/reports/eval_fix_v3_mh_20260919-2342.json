@@ -1,0 +1,103 @@
+{
+  "meta": {
+    "label": "fix_v3_mh",
+    "generated_at": "2026-09-19T15:42:41.908836+00:00",
+    "samples": {
+      "memory_hit": 11
+    },
+    "errors": {
+      "memory_hit": [
+        "mh-03: chat failed twice: HTTPStatusError: Server error '502 Bad Gateway' for url 'http://localhost:8100/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/502",
+        "mh-06: chat failed twice: HTTPStatusError: Server error '502 Bad Gateway' for url 'http://localhost:8100/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/502",
+        "mh-07: chat failed twice: HTTPStatusError: Server error '502 Bad Gateway' for url 'http://localhost:8100/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/502",
+        "mh-09: chat failed twice: HTTPStatusError: Server error '502 Bad Gateway' for url 'http://localhost:8100/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/502",
+        "mh-11: chat failed twice: HTTPStatusError: Server error '502 Bad Gateway' for url 'http://localhost:8100/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/502",
+        "mh-10: chat failed twice: HTTPStatusError: Server error '502 Bad Gateway' for url 'http://localhost:8100/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/502",
+        "mh-13: chat failed twice: HTTPStatusError: Server error '502 Bad Gateway' for url 'http://localhost:8100/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/502",
+        "mh-14: chat failed twice: HTTPStatusError: Server error '502 Bad Gateway' for url 'http://localhost:8100/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/502",
+        "mh-17: chat failed twice: HTTPStatusError: Server error '502 Bad Gateway' for url 'http://localhost:8100/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/502"
+      ]
+    },
+    "judge_effective": {
+      "context_precision": 0,
+      "hallucination": 11
+    },
+    "token_note": "actual_avg=2019 baseline_avg≈795（全量历史字符上界近似；绝对值仅供参考，以 A/B 相对变化为主）"
+  },
+  "metrics": {
+    "memory_recall_at_5": 0.6363636363636364,
+    "memory_precision": 1.0,
+    "context_precision": 0.0,
+    "long_turn_consistency": 0.0,
+    "fact_conflict_rate": 0.0,
+    "hallucination_rate": 0.9090909090909091,
+    "token_savings": -1.5410140330584454,
+    "p95_ttfb_ms": 0.0,
+    "p95_e2e_ms": 0.0,
+    "task_continuity": 0.0
+  },
+  "auxiliary": {
+    "conflict_answer_accuracy": null,
+    "long_turn_assert": null,
+    "task_assert": null,
+    "suite_rows": {
+      "memory_hit": [
+        {
+          "id": "mh-02",
+          "wait_s": 0.2,
+          "recall5": false
+        },
+        {
+          "id": "mh-04",
+          "wait_s": 0.2,
+          "recall5": true
+        },
+        {
+          "id": "mh-01",
+          "wait_s": 0.2,
+          "recall5": true
+        },
+        {
+          "id": "mh-05",
+          "wait_s": 0.2,
+          "recall5": false
+        },
+        {
+          "id": "mh-08",
+          "wait_s": 0.2,
+          "recall5": false
+        },
+        {
+          "id": "mh-12",
+          "wait_s": 0.2,
+          "recall5": true
+        },
+        {
+          "id": "mh-15",
+          "wait_s": 46.1,
+          "recall5": false
+        },
+        {
+          "id": "mh-18",
+          "wait_s": 0.2,
+          "recall5": true
+        },
+        {
+          "id": "mh-16",
+          "wait_s": 0.2,
+          "recall5": true
+        },
+        {
+          "id": "mh-19",
+          "wait_s": 299.3,
+          "recall5": true
+        },
+        {
+          "id": "mh-20",
+          "wait_s": 314.4,
+          "recall5": true
+        }
+      ]
+    }
+  }
+}

@@ -98,11 +98,31 @@ def test_memory_precision_trap_counted_invalid():
 
 
 def test_conflict_rate_coexist():
-    """新旧事实并存于同一探针注入才计入；仅新事实不计。"""
+    """新旧事实以两条独立条目并存才计入；仅新事实不计。"""
     coexist = ([_item("旧号 138"), _item("新号 139")], "138", "139")
     only_new = ([_item("新号 139")], "138", "139")
     assert metrics.conflict_rate([coexist, only_new]) == 0.5
     assert metrics.conflict_rate([]) == 0.0
+
+
+def test_conflict_rate_merged_rewrite_not_coexist():
+    """Fix 轮口径：supersede 后新条目以背景口吻同现新旧值不算并存。
+
+    Fix 轮实测：ACTIVE 新条 content 如"当前手机号 139…，旧号 138…已注销"
+    属良性上下文改写，旧口径误判为并存（6 行 probe 误判 4 行）。
+    """
+    merged = ([_item("用户当前手机号是139，旧号138已准备注销")], "138", "139")
+    assert metrics.conflict_rate([merged]) == 0.0
+
+
+def test_conflict_rate_stale_old_with_new_is_coexist():
+    """旧条未被替代（仅含旧值）且新条已入库（仅含新值）仍判并存。"""
+    stale = (
+        [_item("用户的手机号是138"), _item("用户当前手机号是139")],
+        "138",
+        "139",
+    )
+    assert metrics.conflict_rate([stale]) == 1.0
 
 
 def test_consistency_zero_total():

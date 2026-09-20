@@ -200,7 +200,9 @@ class _AgentBridge:
             )
         except Exception as exc:  # 图内异常统一转 error 事件（上游失败/协议错误）
             logger.error("agent_invoke_failed session=%s error=%s", self._session_id, exc)
-            await self._queue.put(("error", {"message": str(exc)}))
+            # kind 供消费方分流错误类别（Fix 轮：DB 死锁曾被一律标成
+            # llm_upstream_error 502，误导排查方向）
+            await self._queue.put(("error", {"message": str(exc), "kind": type(exc).__name__}))
         finally:
             await self._queue.put(None)
 
@@ -328,7 +330,10 @@ async def chat_completions(payload: ChatCompletionRequest, user: CurrentUser, db
                         final_answer = data["answer"]  # type: ignore[union-attr]
                         pending_confirmation = data.get("interrupt")  # type: ignore[union-attr]
                     elif kind == "error":
-                        raise AppError("llm_upstream_error", 502, str(data["message"]))
+                        # LLM 上游失败 → 502；其余（DB/内部异常）→ 500，类别不混淆
+                        if data.get("kind") == "LLMError":
+                            raise AppError("llm_upstream_error", 502, str(data["message"]))
+                        raise AppError("agent_internal_error", 500, str(data["message"]))
             except LLMError as exc:
                 raise AppError("llm_upstream_error", 502, str(exc)) from exc
         metadata_out: dict = {"session_id": str(session_id)}
@@ -389,7 +394,9 @@ async def chat_completions(payload: ChatCompletionRequest, user: CurrentUser, db
                     )
                 elif kind == "error":
                     message = str(data["message"])
-                    yield _sse({"error": {"message": message, "type": "upstream_error"}})
+                    is_llm = data.get("kind") == "LLMError"
+                    error_type = "upstream_error" if is_llm else "internal_error"
+                    yield _sse({"error": {"message": message, "type": error_type}})
                     yield "data: [DONE]\n\n"
                     return
                 else:  # done
@@ -501,7 +508,10 @@ async def chat_resume(payload: ChatResumeRequest, user: CurrentUser, db: DbDep):
                         lowered = message.lower()
                         if "no pending interrupt" in lowered or "not found" in lowered:
                             raise AppError("no_pending_confirmation", 409, "无可恢复的挂起对话")
-                        yield _sse({"error": {"message": message, "type": "resume_error"}})
+                        error_type = (
+                            "upstream_error" if data.get("kind") == "LLMError" else "internal_error"
+                        )
+                        yield _sse({"error": {"message": message, "type": error_type}})
                         yield "data: [DONE]\n\n"
                         return
                 yield _sse(

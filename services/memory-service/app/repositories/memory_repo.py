@@ -209,6 +209,27 @@ async def upsert_task_progress(
 # ---- M-04 抽取/检索管线 ----
 
 
+async def list_active_keys(db: AsyncSession, *, ws_id: uuid.UUID, limit: int = 64) -> list[str]:
+    """列出 workspace 下 active 记忆的 distinct key（抽取 prompt 复用注入，Fix B）。
+
+    Args:
+        db: 数据库会话。
+        ws_id: 所属 workspace（隔离边界；判重是 ws 级，key 注入同级一致）。
+        limit: 返回条数上限（控制 prompt 长度；按最近更新优先截断）。
+
+    Returns:
+        key 列表（最近更新的优先）。
+    """
+    result = await db.execute(
+        select(Memory.key)
+        .where(Memory.workspace_id == ws_id, Memory.status == MemoryStatus.ACTIVE)
+        .group_by(Memory.key)
+        .order_by(func.max(Memory.updated_at).desc())
+        .limit(limit)
+    )
+    return [row[0] for row in result.all()]
+
+
 async def find_active_by_key(db: AsyncSession, *, ws_id: uuid.UUID, key: str) -> Memory | None:
     """按 workspace + key 查找 active 记忆（去重的精确匹配路径）。
 
@@ -425,9 +446,13 @@ async def search_candidates(
 async def record_hits(db: AsyncSession, memory_ids: list[uuid.UUID]) -> int:
     """批量更新命中统计（hit_count+1、last_hit_at=now）并记 HIT 事件。
 
+    按 UUID 序逐行 UPDATE：固定加锁顺序。批量 ``WHERE id IN`` 的行锁顺序由
+    planner 决定，与抽取管线等其它 memories 写路径交叉时可能成环死锁
+    （Fix 轮实锤：三环死锁导致 chat 502），锁序全序化后死锁圈无法闭合。
+
     Args:
-        db: 数据库会话。
-        memory_ids: 本轮被注入上下文的记忆 ID 列表。
+        db: 数据库会话（事务边界由调用方管理——检索器内立即 commit）。
+        memory_ids: 本轮被注入上下文的记忆 ID 列表（内部排序，传入顺序无关）。
 
     Returns:
         更新条数。
@@ -435,12 +460,12 @@ async def record_hits(db: AsyncSession, memory_ids: list[uuid.UUID]) -> int:
     if not memory_ids:
         return 0
     now = datetime.now(UTC)
-    await db.execute(
-        update(Memory)
-        .where(Memory.id.in_(memory_ids))
-        .values(hit_count=Memory.hit_count + 1, last_hit_at=now)
-    )
-    for mid in memory_ids:
+    for mid in sorted(memory_ids):
+        await db.execute(
+            update(Memory)
+            .where(Memory.id == mid)
+            .values(hit_count=Memory.hit_count + 1, last_hit_at=now)
+        )
         await _add_event(db, mid, MemoryEventType.HIT, source=MemoryEventSource.SYSTEM)
     return len(memory_ids)
 

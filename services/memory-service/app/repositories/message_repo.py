@@ -31,6 +31,22 @@ async def create(
     return message
 
 
+async def count_by_session(db: AsyncSession, *, session_id: uuid.UUID) -> int:
+    """统计会话消息总数（任务简报"会话早期"判断依据，Fix C）。
+
+    Args:
+        db: 数据库会话。
+        session_id: 目标会话。
+
+    Returns:
+        该会话的消息总数（含 user/assistant 双方）。
+    """
+    total = await db.scalar(
+        select(func.count()).select_from(Message).where(Message.session_id == session_id)
+    )
+    return int(total or 0)
+
+
 async def list_by_session(
     db: AsyncSession, *, session_id: uuid.UUID, limit: int, offset: int
 ) -> tuple[list[Message], int]:

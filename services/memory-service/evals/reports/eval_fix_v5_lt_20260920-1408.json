@@ -1,0 +1,58 @@
+{
+  "meta": {
+    "label": "fix_v5_lt",
+    "generated_at": "2026-09-20T06:08:29.804878+00:00",
+    "samples": {
+      "long_turn": 2
+    },
+    "errors": {
+      "long_turn": []
+    },
+    "judge_effective": {
+      "context_precision": 2,
+      "hallucination": 0
+    },
+    "token_note": "actual_avg=2547 baseline_avg≈13000（全量历史字符上界近似；绝对值仅供参考，以 A/B 相对变化为主）"
+  },
+  "metrics": {
+    "memory_recall_at_5": 0.0,
+    "memory_precision": 0.0,
+    "context_precision": 0.775,
+    "long_turn_consistency": 0.0,
+    "fact_conflict_rate": 0.0,
+    "hallucination_rate": 0.0,
+    "token_savings": 0.8041046026038992,
+    "p95_ttfb_ms": 1779.9299100079224,
+    "p95_e2e_ms": 33240.22619499519,
+    "task_continuity": 0.0
+  },
+  "auxiliary": {
+    "conflict_answer_accuracy": null,
+    "long_turn_assert": "0/2",
+    "task_assert": null,
+    "suite_rows": {
+      "long_turn": [
+        {
+          "id": "lt-01",
+          "assert": false,
+          "missed": [
+            "两小时 / 晚上"
+          ],
+          "injected": 5,
+          "answer": "好的，结合你的背景、弱项优先级（Kafka重平衡 > MySQL索引 > gRPC熔断）和「节奏可控」要求，为你定制 **5天渐进式复习计划**（每天≤90分钟，聚焦闭环验证，拒绝泛读）：\n\n---\n\n### 📅 **周一：Kafka重平衡——从你线上配置出发**  \n- ✅ **动作**：  \n  - 查你履约系统中 `inventory-consumer-group` 的实际配置（`max.poll.interval.ms` / `session.timeout.ms` / `heartbeat.interval.ms`）  \n  - 对照 Kafka 官方文档，画出「一次真实 rebalance 触发的时序图」（标注你订单链路中哪个环节最可能超时）  \n- 🎯 **验收标准**：能指着监控截图说清“上次 lag 突增，根本原因是支付服务消费慢导致 heartbeat 超时”  \n- ",
+          "ttfb_ms": 1276.1
+        },
+        {
+          "id": "lt-02",
+          "assert": false,
+          "missed": [
+            "周日下午 / 通勤 / 一小时"
+          ],
+          "injected": 8,
+          "answer": "好的，结合你当前状态（Tech Lead身份、gRPC/订单履约实战扎实、备战美团+字节双线、每周五复盘），我为你定制一个**聚焦、可执行、有反馈闭环**的两周计划——不堆量，只打关键点：\n\n---\n\n### 📅 **第1周（聚焦「美团对标」+「基础加固」）**\n| 时间       | 任务 | 说明 |\n|------------|------|------|\n| **每天 30min** | 精读美团《订单系统架构演进》博客 | 重点标红你已实践的点（如gRPC超时治理、库存状态机），用黄笔圈出**你项目中未覆盖但文中强调的细节**（例如：状态机异常兜底策略、gRPC重试幂等边界）。读完立刻在笔记里写1句“我怎么改”。 |\n| **周二晚 45min** | 拆解1个gRPC超时故障案例 | 找你线上日志里1次DeductInventory接口200ms超时失败的真实case，画调用",
+          "ttfb_ms": 1806.4
+        }
+      ]
+    }
+  }
+}
