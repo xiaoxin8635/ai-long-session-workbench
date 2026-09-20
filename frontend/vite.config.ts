@@ -26,8 +26,23 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
-    // 本机 WSL2 VM 常驻占用约 8GB，并行 worker 会偶发 OOM 崩溃（v3.2 实测），
-    // 文件量小改为串行跑，稳定性优先
+    // 本机 WSL2 VM 常驻占用约 8GB（空闲常 <4GB），并行 worker 会偶发 OOM：
+    // ①fileParallelism: false 串行跑文件；②pool 用 forks（子进程）而非默认
+    // threads——worker 线程与主进程共享地址空间，内存紧张时 V8 isolate cage
+    // 预留失败直接 "Zone Allocation failed"（--max-old-space-size 也无效）；
+    // ③execArgv 显式指定子进程堆形——内存吃紧时 V8 会把 semi-space 压到
+    // 极小值，偶发 "Committing semi space failed"，固定参数消除抖动。
+    // 非代码缺陷，环境约束，见 docs/04。
     fileParallelism: false,
+    pool: "forks",
+    // 恒定只保留 1 个 fork 子进程（默认会按 CPU 数预建进程池，空闲进程
+    // 也各占一份 node+jsdom 内存），把套件常驻内存压到最低
+    minWorkers: 1,
+    maxWorkers: 1,
+    poolOptions: {
+      forks: {
+        execArgv: ["--max-semi-space-size=64", "--max-old-space-size=1536"],
+      },
+    },
   },
 });

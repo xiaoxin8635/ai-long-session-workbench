@@ -14,15 +14,13 @@ import {
 } from "react-router-dom";
 import AppLayout from "./components/AppLayout";
 import ChatPage from "./pages/ChatPage";
+import KnowledgePage from "./pages/KnowledgePage";
 import LoginPage from "./pages/Login";
 import MemoriesPage from "./pages/MemoriesPage";
+import SettingsPage from "./pages/SettingsPage";
+import TasksPage from "./pages/TasksPage";
 import ToolsPage from "./pages/ToolsPage";
-import {
-  KnowledgePage,
-  SettingsPage,
-  TasksPage,
-  UsagePage,
-} from "./pages/Placeholders";
+import UsagePage from "./pages/UsagePage";
 import { useAuthStore } from "./stores/auth";
 
 /** 路由守卫：未登录重定向 /login，登录后回跳原路径。 */

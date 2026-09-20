@@ -8,8 +8,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "node --max-old-space-size=2048 node_modules/vitest/vitest.mjs run",
+    "test:watch": "node --max-old-space-size=2048 node_modules/vitest/vitest.mjs",
     "lint": "eslint src"
   },
   "dependencies": {
