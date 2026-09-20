@@ -21,11 +21,6 @@ export function Placeholder({ title, hint }: { title: string; hint: string }): J
   );
 }
 
-/** 对话页占位（M-F2 实现：会话 CRUD + SSE 流式 + Markdown + citations）。 */
-export function ChatPage(): JSX.Element {
-  return <Placeholder title="对话" hint="M-F2 交付：流式对话 + 记忆上下文 + 引用来源" />;
-}
-
 /** 记忆工作台占位（M-F4 实现：列表/详情/编辑/冲突裁决）。 */
 export function MemoriesPage(): JSX.Element {
   return <Placeholder title="记忆工作台" hint="M-F4 交付：四层记忆管理 + 冲突裁决" />;

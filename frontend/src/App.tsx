@@ -13,9 +13,9 @@ import {
   useLocation,
 } from "react-router-dom";
 import AppLayout from "./components/AppLayout";
+import ChatPage from "./pages/ChatPage";
 import LoginPage from "./pages/Login";
 import {
-  ChatPage,
   KnowledgePage,
   MemoriesPage,
   SettingsPage,

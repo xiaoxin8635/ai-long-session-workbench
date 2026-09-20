@@ -14,9 +14,11 @@ export default defineConfig({
     // dev 端口 3200：3000 当前被 Open WebUI 占用（M-F6 退役后生产 web 容器接管 3000）
     port: 3200,
     proxy: {
-      "/api": { target: "http://localhost:8100", changeOrigin: true },
+      // target 用 127.0.0.1 而非 localhost：本机 wslrelay 曾占用 [::1]:8100，
+      // Node 解析 localhost 优先 ::1 时请求会被劫持（见 docs/04 环境手册踩坑记录）
+      "/api": { target: "http://127.0.0.1:8100", changeOrigin: true },
       // SSE 流式对话走 /v1；vite dev proxy 默认透传 chunk 不缓冲，无需特殊选项
-      "/v1": { target: "http://localhost:8100", changeOrigin: true },
+      "/v1": { target: "http://127.0.0.1:8100", changeOrigin: true },
     },
   },
   test: {
