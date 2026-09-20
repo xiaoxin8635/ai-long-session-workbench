@@ -1,1 +1,0 @@
-{"root":["./src/app.tsx","./src/main.tsx","./src/__tests__/auth-store.test.ts","./src/__tests__/login.test.tsx","./src/__tests__/types.test.ts","./src/api/auth.ts","./src/api/client.ts","./src/api/types.ts","./src/components/applayout.tsx","./src/pages/login.tsx","./src/pages/placeholders.tsx","./src/stores/auth.ts","./src/test/setup.ts"],"version":"5.6.3"}
