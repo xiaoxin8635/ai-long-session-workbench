@@ -1,0 +1,10 @@
+# Docker 构建上下文排除清单（EchoDesk 前端）
+# 依赖与构建产物在容器内重新生成，不进上下文（提速 + 防陈旧产物覆盖）
+node_modules
+dist
+coverage
+*.tsbuildinfo
+
+# 本机辅助脚本（Python 实机探针）与 git 元数据不进镜像
+scripts
+.gitignore

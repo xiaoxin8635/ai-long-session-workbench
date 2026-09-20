@@ -14,9 +14,9 @@
 
 ## 项目背景
 
-- 本项目是"AI 长会话知识工作台"：Open WebUI 做产品壳，自研 `memory-service`（FastAPI + LangGraph）承载四层记忆、上下文组装、RAG、MCP 工具、观测
-- 完整设计见 `docs\01-项目开发内容与实现方案.md`，开发任何模块前必须先读对应章节
-- 本项目基于 Open WebUI 二次开发：涉及 `open-webui/` 目录时，保留上游 license、版权声明与署名，不得删除或遮挡
+- 本项目是"AI 长会话知识工作台"（EchoDesk）：自研 `frontend/`（React 18 + TS + Vite + Tailwind，M-F6 起唯一产品入口）+ 自研 `memory-service`（FastAPI + LangGraph）承载四层记忆、上下文组装、RAG、MCP 工具、观测
+- 历史沿革：阶段1 曾用 Open WebUI 官方镜像 + Pipe 做产品壳，M-F6 起退役（Pipe 脚本归档保留于 `deploy\pipes\`，不得删除）；仓库不含 Open WebUI 源码，无二开代码
+- 完整设计见 `docs\01-项目开发内容与实现方案.md` 与 `docs\07-前端重写规划.md`，开发任何模块前必须先读对应章节
 
 ## 技术栈（不要引入清单之外的重量级依赖）
 
@@ -78,7 +78,7 @@ config/                     # 预算策略等 YAML 配置
 ## 进程与端口管理
 
 - 启动/重启任何服务前，先用 `netstat -ano | findstr <port>` 检查端口占用，被占用则先 `taskkill //f //pid <pid>` 再启动
-- 端口约定：Open WebUI 3000 / memory-service 8100 / PostgreSQL 5432 / Redis 6379 / Milvus 19530 / Langfuse 3001
+- 端口约定：web（EchoDesk 前端）3000 / memory-service 8100 / PostgreSQL 5432 / Redis 6379 / Milvus 19530 / Langfuse 3001 / 前端 dev 3200
 
 ## 工作方式
 

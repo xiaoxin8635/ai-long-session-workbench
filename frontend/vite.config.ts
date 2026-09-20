@@ -11,7 +11,8 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   server: {
-    // dev 端口 3200：3000 当前被 Open WebUI 占用（M-F6 退役后生产 web 容器接管 3000）
+    // dev 端口 3200：生产 3000 由 web 容器（Nginx，见 frontend/nginx.conf）占用，
+    // dev 前端错开端口并行开发
     port: 3200,
     proxy: {
       // target 用 127.0.0.1 而非 localhost：本机 wslrelay 曾占用 [::1]:8100，

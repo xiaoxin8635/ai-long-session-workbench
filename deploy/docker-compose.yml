@@ -2,19 +2,23 @@
 # AI 长会话知识工作台 - 本地开发环境
 #
 # 服务清单：
-#   - open-webui      聊天工作台产品壳（后续二开区域）
+#   - web             EchoDesk 自研前端（React SPA + Nginx 同源反代，M-F6 起唯一产品入口）
 #   - memory-service  自研核心服务（四层记忆 / 上下文组装 / Agent Runtime）
 #   - embedding       bge-m3 向量服务（infinity，OpenAI 兼容 /embeddings）
 #   - postgres        业务数据库（会话/消息/记忆等结构化数据，含 pgvector）
 #   - redis           工作记忆 / 缓存 / 分布式锁
+#
+# 历史说明：阶段1 曾用 Open WebUI 官方镜像 + Pipe 函数做产品壳，
+# M-F6 起退役（容器不再运行；Pipe 桥接脚本归档保留于 deploy/pipes/）。
 #
 # 使用方式：
 #   1. 复制 .env.example 为 .env 并填写真实密码（.env 已被 git 忽略）
 #   2. 在本目录执行 docker compose up -d --build
 #   3. 首次启动后执行数据库迁移：
 #      docker exec workbench-memory alembic upgrade head
+#   4. 浏览器访问 http://localhost:3000（web 容器，Nginx 托管 + 反代）
 #
-# 端口约定（见 CLAUDE.md）：Open WebUI 3000 / memory-service 8100
+# 端口约定（见 CLAUDE.md）：web(EchoDesk 前端) 3000 / memory-service 8100
 #                          / PostgreSQL 5432 / Redis 6379 / embedding 7997
 #
 # 说明：Milvus、Langfuse 将在后续里程碑加入本文件
@@ -27,7 +31,6 @@ networks:
     driver: bridge
 
 volumes:
-  openwebui-data:
   postgres-data:
   redis-data:
   langfuse-postgres-data:
@@ -149,33 +152,39 @@ services:
       timeout: 5s
       retries: 5
 
-  # ---------- Open WebUI：工作台产品壳 ----------
-  open-webui:
-    image: ghcr.io/open-webui/open-webui:main
-    container_name: workbench-openwebui
+  # ---------- web：EchoDesk 自研前端（React SPA + Nginx 同源反代） ----------
+  # M-F6 起替代 Open WebUI 成为唯一产品入口：Nginx 托管静态产物，并反代
+  # memory-service（/api REST、/v1 SSE 关缓冲保流式，见 frontend/nginx.conf）。
+  # 3000 端口不变，用户书签无缝切换；前端代码不感知后端地址（同源相对路径）。
+  web:
+    build:
+      context: ../frontend
+      args:
+        # 国内网络构建加速：npmmirror（海外环境可改回官方源）
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+    container_name: workbench-web
     restart: unless-stopped
     environment:
       TZ: Asia/Shanghai
-      # 启用用户体系：多用户 / workspace 隔离的基础
-      WEBUI_AUTH: "True"
-      # 数据目录（挂载到命名卷，升级镜像不丢数据）
-      DATA_DIR: /app/backend/data
-      # 【预留】Day 3 起 memory-service 就绪后，通过 Pipe 对接自研服务；
-      # 如后续希望 Open WebUI 自身也用 PostgreSQL 存储，可启用：
-      # DATABASE_URL: postgresql://${POSTGRES_USER:-workbench}:${POSTGRES_PASSWORD}@postgres:5432/openwebui
     ports:
-      - "${OPENWEBUI_PORT:-3000}:8080"
-    volumes:
-      - openwebui-data:/app/backend/data
+      - "${WEB_PORT:-3000}:80"
+    depends_on:
+      - memory-service
     networks:
       - workbench-net
-    # 注意：Open WebUI 当前不直连 postgres/redis（自带 SQLite），
-    # 未来 memory-service 加入后由它声明 depends_on，Open WebUI 经 Pipe 调用 memory-service
+    healthcheck:
+      # 显式 IPv4：容器内 localhost 优先解析 [::1]，wget 依赖 nginx 的 IPv6 监听，
+      # 127.0.0.1 则与 nginx listen 80 直连（双保险，见 frontend/nginx.conf）
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1/ >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
   # ---------- Langfuse：LLM 观测栈（M-12，profile=observability 渐进启用） ----------
   # 官方 docker-compose 的本地化裁剪：独立 PG/Redis（与业务库隔离，升级与
   # 密码策略互不影响），数据面组件不映射宿主端口；web 映射 3001（3000 已被
-  # Open WebUI 占用）。trace 数据链路：memory-service(OTLP HTTP) → web →
+  # 前端 web 容器占用）。trace 数据链路：memory-service(OTLP HTTP) → web →
   # Redis 队列 → worker 落 ClickHouse；事件对象存 MinIO。
   # 启用方式：先在 deploy/.env 填 LANGFUSE_* 密钥，再
   #   docker compose -f docker-compose.yml --profile observability up -d
