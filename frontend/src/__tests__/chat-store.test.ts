@@ -19,6 +19,7 @@ vi.mock("../api/sessions", () => ({
 }));
 vi.mock("../api/chat", () => ({
   streamChat: vi.fn(),
+  streamResume: vi.fn(),
 }));
 
 const { useChatStore } = await import("../stores/chat");
@@ -32,6 +33,7 @@ const listWorkspacesMock = vi.mocked(workspacesApi.listWorkspaces);
 const listSessionsMock = vi.mocked(sessionsApi.listSessions);
 const listMessagesMock = vi.mocked(sessionsApi.listMessages);
 const streamChatMock = vi.mocked(chatApi.streamChat);
+const streamResumeMock = vi.mocked(chatApi.streamResume);
 
 /**
  * 构造 workspace mock 返回。
@@ -204,6 +206,124 @@ describe("chat store", () => {
     const assistant = state.messages.find((m) => m.role === "assistant");
     expect(assistant?.failed).toBe(true);
     expect(state.error).toBe("服务内部错误");
+    expect(state.streaming).toBe(false);
+  });
+
+  it("sendMessage 收到 tool_call 事件时挂到助手消息", async () => {
+    await bootstrapWithEmptySessions();
+    streamChatMock.mockImplementation(async (params) => {
+      params.handlers.onSessionId("s-t");
+      params.handlers.onToolCall({
+        call_id: "c-1",
+        tool: "web.fetch",
+        args: { url: "https://example.com" },
+        risk: "external",
+      });
+    });
+
+    await useChatStore.getState().sendMessage("抓网页");
+
+    const assistant = useChatStore.getState().messages[1]!;
+    expect(assistant.toolCall).toMatchObject({ call_id: "c-1", tool: "web.fetch" });
+    expect(assistant.toolCall!.resolved).toBeUndefined();
+  });
+
+  it("resumeToolCall approve：续传增量回填并标记已裁决", async () => {
+    useChatStore.setState({
+      workspaceId: "ws-1",
+      activeSessionId: "s-1",
+      streaming: false,
+      error: null,
+      messages: [
+        { key: "m-user", role: "user", content: "抓取" },
+        {
+          key: "m-asst",
+          role: "assistant",
+          content: "",
+          toolCall: {
+            call_id: "c-9",
+            tool: "web.fetch",
+            args: { url: "https://example.com" },
+            risk: "external",
+          },
+        },
+      ],
+    });
+    listSessionsMock.mockResolvedValue({ items: [], total: 0 });
+    streamResumeMock.mockImplementation(async (params) => {
+      expect(params.callId).toBe("c-9");
+      expect(params.approve).toBe(true);
+      params.handlers.onDelta("已抓取完成");
+    });
+
+    await useChatStore.getState().resumeToolCall(true);
+
+    const state = useChatStore.getState();
+    expect(state.streaming).toBe(false);
+    expect(state.messages[1]!.content).toBe("已抓取完成");
+    expect(state.messages[1]!.toolCall!.resolved).toBe("approved");
+  });
+
+  it("resumeToolCall deny：标记拒绝且不回填正文", async () => {
+    useChatStore.setState({
+      workspaceId: "ws-1",
+      activeSessionId: "s-1",
+      streaming: false,
+      error: null,
+      messages: [
+        { key: "m-user", role: "user", content: "抓取" },
+        {
+          key: "m-asst",
+          role: "assistant",
+          content: "",
+          toolCall: {
+            call_id: "c-9",
+            tool: "web.fetch",
+            args: { url: "https://example.com" },
+            risk: "external",
+          },
+        },
+      ],
+    });
+    listSessionsMock.mockResolvedValue({ items: [], total: 0 });
+    streamResumeMock.mockResolvedValue(undefined);
+
+    await useChatStore.getState().resumeToolCall(false);
+
+    const state = useChatStore.getState();
+    expect(streamResumeMock.mock.calls[0]![0].approve).toBe(false);
+    expect(state.messages[1]!.toolCall!.resolved).toBe("denied");
+    expect(state.messages[1]!.content).toBe("");
+  });
+
+  it("resumeToolCall 请求层异常时解除挂起并提示错误", async () => {
+    useChatStore.setState({
+      workspaceId: "ws-1",
+      activeSessionId: "s-1",
+      streaming: false,
+      error: null,
+      messages: [
+        {
+          key: "m-asst",
+          role: "assistant",
+          content: "",
+          toolCall: {
+            call_id: "c-9",
+            tool: "web.fetch",
+            args: { url: "https://example.com" },
+            risk: "external",
+          },
+        },
+      ],
+    });
+    listSessionsMock.mockResolvedValue({ items: [], total: 0 });
+    streamResumeMock.mockRejectedValue(new Error("聊天请求失败：该调用已处于 success 终态"));
+
+    await useChatStore.getState().resumeToolCall(true);
+
+    const state = useChatStore.getState();
+    expect(state.error).toContain("已处于 success 终态");
+    expect(state.messages[0]!.toolCall!.resolved).toBe("approved");
     expect(state.streaming).toBe(false);
   });
 

@@ -6,7 +6,7 @@
  */
 import { create } from "zustand";
 import * as chatApi from "../api/chat";
-import type { Citation } from "../api/chat";
+import type { Citation, ToolCallRequest } from "../api/chat";
 import * as sessionsApi from "../api/sessions";
 import type { MessageRead, SessionRead } from "../api/sessions";
 import { listWorkspaces } from "../api/workspaces";
@@ -22,6 +22,8 @@ export interface ChatMessage {
   citations?: Citation[];
   /** 流式失败标记（展示重试提示）。 */
   failed?: boolean;
+  /** external 工具确认请求（挂在本条助手消息上；resolved 记录裁决结果）。 */
+  toolCall?: ToolCallRequest & { resolved?: "approved" | "denied" };
 }
 
 /** 聊天 store 状态与动作。 */
@@ -49,6 +51,8 @@ interface ChatState {
   startDraft: () => void;
   /** 发送消息（流式）。 */
   sendMessage: (content: string) => Promise<void>;
+  /** 裁决当前挂起的 external 工具调用并续传回答（SSE）。 */
+  resumeToolCall: (approve: boolean) => Promise<void>;
   /** 重命名会话。 */
   renameSession: (sessionId: string, title: string) => Promise<void>;
   /** 删除会话（若删的是当前会话则回到草稿态）。 */
@@ -156,7 +160,16 @@ export const useChatStore = create<ChatState>()((set, get) => ({
             }
           },
           onDelta: appendDelta,
-          onToolCall: () => undefined, // M-F3 接确认卡片
+          onToolCall: (toolCall) => {
+            // external 确认请求挂在当前助手消息上（气泡内渲染确认卡片）
+            const msgs = get().messages;
+            const idx = msgs.findIndex((m) => m.key === assistantKey);
+            if (idx !== -1) {
+              const updated = [...msgs];
+              updated[idx] = { ...updated[idx], toolCall };
+              set({ messages: updated });
+            }
+          },
           onError: (message) => {
             set({ error: message });
             markFailed();
@@ -180,6 +193,59 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     } catch (err) {
       set({ error: errorMessage(err) });
       markFailed();
+    } finally {
+      set({ streaming: false });
+    }
+  },
+
+  resumeToolCall: async (approve) => {
+    const { workspaceId, activeSessionId, messages, streaming } = get();
+    if (!workspaceId || !activeSessionId || streaming) {
+      return;
+    }
+    const idx = messages.findIndex((m) => m.toolCall !== undefined && m.toolCall.resolved === undefined);
+    if (idx === -1) {
+      return;
+    }
+    const targetKey = messages[idx]!.key;
+    const callId = messages[idx]!.toolCall!.call_id;
+    set({ streaming: true, error: null });
+
+    // 就地向携带 toolCall 的助手消息追加续传增量 / 回写裁决结果
+    const patchTarget = (patch: (m: ChatMessage) => ChatMessage): void => {
+      const msgs = get().messages;
+      const i = msgs.findIndex((m) => m.key === targetKey);
+      if (i !== -1) {
+        const updated = [...msgs];
+        updated[i] = patch(updated[i]!);
+        set({ messages: updated });
+      }
+    };
+
+    try {
+      await chatApi.streamResume({
+        workspaceId,
+        sessionId: activeSessionId,
+        callId,
+        approve,
+        handlers: {
+          onSessionId: () => undefined, // resume 不换会话
+          onDelta: (text) => {
+            patchTarget((m) => ({ ...m, content: m.content + text }));
+          },
+          onToolCall: () => undefined,
+          onError: (message) => {
+            set({ error: message });
+          },
+          onFinish: () => undefined,
+        },
+      });
+      patchTarget((m) => ({ ...m, toolCall: { ...m.toolCall!, resolved: approve ? "approved" : "denied" } }));
+      await refreshSessions();
+    } catch (err) {
+      set({ error: errorMessage(err) });
+      // HTTP 层失败（如 409 已终态）：解除挂起避免确认卡片永久卡住
+      patchTarget((m) => ({ ...m, toolCall: { ...m.toolCall!, resolved: approve ? "approved" : "denied" } }));
     } finally {
       set({ streaming: false });
     }

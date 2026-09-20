@@ -6,6 +6,7 @@
  */
 import { useEffect, useRef, useState, type JSX, type KeyboardEvent } from "react";
 import { MessageBubble } from "../components/MessageBubble";
+import { ToolConfirmCard } from "../components/ToolConfirmCard";
 import type { SessionRead } from "../api/sessions";
 import { useChatStore } from "../stores/chat";
 
@@ -32,6 +33,7 @@ export default function ChatPage(): JSX.Element {
   const selectSession = useChatStore((s) => s.selectSession);
   const startDraft = useChatStore((s) => s.startDraft);
   const sendMessage = useChatStore((s) => s.sendMessage);
+  const resumeToolCall = useChatStore((s) => s.resumeToolCall);
   const renameSession = useChatStore((s) => s.renameSession);
   const removeSession = useChatStore((s) => s.removeSession);
   const clearError = useChatStore((s) => s.clearError);
@@ -42,6 +44,8 @@ export default function ChatPage(): JSX.Element {
   const [editingId, setEditingId] = useState<string | null>(null);
   /** 重命名输入框的草稿值。 */
   const [editValue, setEditValue] = useState("");
+  /** 工具裁决请求进行中（确认卡片按钮禁用）。 */
+  const [resuming, setResuming] = useState(false);
 
   /** 消息区滚动容器（新消息/流式增量时滚到底部）。 */
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -75,16 +79,35 @@ export default function ChatPage(): JSX.Element {
     (s) => s.id === activeSessionId
   );
 
+  /** 当前挂起待裁决的 external 工具调用（有挂起时禁输入，直至裁决完成）。 */
+  const pendingCall =
+    messages.find((m) => m.toolCall !== undefined && m.toolCall.resolved === undefined)
+      ?.toolCall ?? null;
+
   /**
-   * 提交当前草稿（流式中或草稿为空时忽略）。
+   * 提交当前草稿（流式中、有挂起确认或草稿为空时忽略）。
    */
   function submit(): void {
     const content = draft.trim();
-    if (content === "" || streaming || workspaceId === null) {
+    if (content === "" || streaming || workspaceId === null || pendingCall !== null) {
       return;
     }
     setDraft("");
     void sendMessage(content);
+  }
+
+  /**
+   * 裁决挂起的工具调用（同意/拒绝后经 resume 续传回答）。
+   *
+   * @param approve - true 执行 / false 拒绝。
+   */
+  async function decide(approve: boolean): Promise<void> {
+    setResuming(true);
+    try {
+      await resumeToolCall(approve);
+    } finally {
+      setResuming(false);
+    }
   }
 
   /**
@@ -255,11 +278,20 @@ export default function ChatPage(): JSX.Element {
             </div>
           ) : (
             messages.map((m, i) => (
-              <MessageBubble
-                key={m.key}
-                message={m}
-                streaming={streaming && i === messages.length - 1 && m.role === "assistant"}
-              />
+              <div key={m.key} className="space-y-3">
+                <MessageBubble
+                  message={m}
+                  streaming={streaming && i === messages.length - 1 && m.role === "assistant"}
+                />
+                {m.toolCall !== undefined && m.toolCall.resolved === undefined && (
+                  <ToolConfirmCard
+                    toolCall={m.toolCall}
+                    busy={resuming}
+                    onApprove={() => void decide(true)}
+                    onDeny={() => void decide(false)}
+                  />
+                )}
+              </div>
             ))
           )}
         </div>
@@ -292,9 +324,13 @@ export default function ChatPage(): JSX.Element {
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={handleKeyDown}
-              disabled={streaming || workspaceId === null}
+              disabled={streaming || pendingCall !== null || workspaceId === null}
               placeholder={
-                streaming ? "回答生成中…" : "输入消息，Enter 发送，Shift+Enter 换行"
+                pendingCall !== null
+                  ? "等待工具确认…"
+                  : streaming
+                    ? "回答生成中…"
+                    : "输入消息，Enter 发送，Shift+Enter 换行"
               }
               className="max-h-40 flex-1 resize-none rounded-xl border border-slate-300 px-3 py-2
                          text-sm outline-none transition focus:border-sky-500 disabled:bg-slate-100
@@ -303,7 +339,9 @@ export default function ChatPage(): JSX.Element {
             <button
               type="button"
               onClick={submit}
-              disabled={streaming || draft.trim() === "" || workspaceId === null}
+              disabled={
+                streaming || pendingCall !== null || draft.trim() === "" || workspaceId === null
+              }
               className="shrink-0 rounded-xl bg-sky-600 px-4 py-2 text-sm font-medium text-white
                          transition hover:bg-sky-700 disabled:opacity-50"
             >

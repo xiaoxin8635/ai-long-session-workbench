@@ -23,6 +23,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/memories", label: "记忆", icon: "🧠" },
   { to: "/knowledge", label: "知识库", icon: "📚" },
   { to: "/tasks", label: "任务", icon: "✅" },
+  { to: "/tools", label: "工具", icon: "🔧" },
   { to: "/usage", label: "用量", icon: "📊" },
   { to: "/settings", label: "设置", icon: "⚙️" },
 ];

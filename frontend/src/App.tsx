@@ -15,6 +15,7 @@ import {
 import AppLayout from "./components/AppLayout";
 import ChatPage from "./pages/ChatPage";
 import LoginPage from "./pages/Login";
+import ToolsPage from "./pages/ToolsPage";
 import {
   KnowledgePage,
   MemoriesPage,
@@ -52,6 +53,7 @@ export default function App(): JSX.Element {
             <Route path="memories" element={<MemoriesPage />} />
             <Route path="knowledge" element={<KnowledgePage />} />
             <Route path="tasks" element={<TasksPage />} />
+            <Route path="tools" element={<ToolsPage />} />
             <Route path="usage" element={<UsagePage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>
