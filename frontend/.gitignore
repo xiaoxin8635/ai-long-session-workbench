@@ -1,0 +1,12 @@
+# 依赖与构建产物
+node_modules/
+dist/
+
+# 本地环境
+*.local
+.env
+
+# 编辑器
+.idea/
+.vscode/
+*.log
