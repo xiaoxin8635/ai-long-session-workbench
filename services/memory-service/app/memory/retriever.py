@@ -1,8 +1,12 @@
 """记忆检索（M-04 读路径，docs/01 §5.2.3）。
 
-流程：query 向量化 → 向量召回（active/未过期/归属过滤）→ 加权重排
-（sim*0.5 + importance*0.2 + recency*0.15 + hit*0.15）→ 同 key 去重
-→ top-k → 命中写回 hit_count 与 HIT 事件。
+流程：query 向量化 → 向量召回（active + conflicted/未过期/归属过滤）→ 加权重排
+（sim*0.5 + importance*0.2 + recency*0.15 + hit*0.15，CONFLICTED 条目乘惩罚系数）
+→ 同 key 去重 → top-k → 命中写回 hit_count 与 HIT 事件。
+
+CONFLICTED（待用户裁决）条目参与检索但降权：完全排除会使待裁决期间的信息
+从上下文静默消失（Fix A 疑似冲突降级的副作用，评测优化轮实锤）；降权使其
+排在同条件 ACTIVE 之后，预算紧张时优先被裁掉。
 
 Embedding 失败时降级返回空列表（检索是增强项，不阻塞回答主链路）。
 """
@@ -18,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.llm.embeddings import EmbeddingClient, EmbeddingError
 from app.memory.schemas import ScoredMemory
+from app.models.enums import MemoryStatus
 from app.repositories import memory_repo
 
 logger = logging.getLogger(__name__)
@@ -93,6 +98,7 @@ class MemoryRetriever:
 
         # ---- 加权重排 + 同 key 只保留最高分 ----
         best_by_key: dict[str, ScoredMemory] = {}
+        conflicted_penalty = get_settings().conflicted_retrieval_penalty
         for memory, similarity in candidates:
             score = (
                 similarity * _W_SIMILARITY
@@ -100,6 +106,9 @@ class MemoryRetriever:
                 + _recency_score(memory.updated_at) * _W_RECENCY
                 + min(memory.hit_count / _HIT_SATURATION, 1.0) * _W_HIT
             )
+            # 待裁决条目降权（内容可能是待核实的旧值：可检索但不与 ACTIVE 抢排名）
+            if memory.status == MemoryStatus.CONFLICTED:
+                score *= conflicted_penalty
             scored = ScoredMemory(memory=memory, similarity=similarity, score=score)
             current = best_by_key.get(memory.key)
             if current is None or scored.score > current.score:

@@ -206,7 +206,8 @@ class ChatService:
             usage: 上游 LLM usage 对象（prompt_tokens/completion_tokens）；
                 流式未回传时 None → 全量本地估算。
         """
-        message = await _session_service.append_message(
+        # assistant 消息落库（返回值不再参与抽取，见下方 Fix I 注释）
+        await _session_service.append_message(
             db,
             ws_id=ws_id,
             session_id=session_id,
@@ -223,14 +224,16 @@ class ChatService:
         )
         await self._summarizer.maybe_compress(db, ws_id=ws_id, session_id=session_id)
         if self._extract_hook is not None:
+            # Fix I（评测优化轮二期）：抽取只喂用户消息——assistant 回答中的
+            # 建议性/延伸性内容会被抽取模型误认成"用户事实"（fix_v6_lt 实锤：
+            # AI 脑补的学习计划被抽成 preference.study_time，且"周末暂不安排
+            # 学习"与用户真实约束"周日下午学习"矛盾）。结构性阻断优于 prompt
+            # 恳求：用户事实以用户陈述为准，回答内容不进入抽取视野。
             self._extract_hook(
                 ws_id,
                 user_id,
                 session_id,
-                [
-                    (user_msg_id, "user", user_content),
-                    (message.id, "assistant", answer),
-                ],
+                [(user_msg_id, "user", user_content)],
             )
 
     async def stream_answer(

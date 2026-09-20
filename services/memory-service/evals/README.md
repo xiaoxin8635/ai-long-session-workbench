@@ -136,7 +136,9 @@ Recall/Precision/Conflict 均基于该结构判定，不依赖回答文本猜测
 Fix 轮实测：抽取产出正确但入队执行晚于 probe 数分钟，Recall/Conflict
 被误判 FAIL（事实"丢库"假象）。
 
-等待采用**两阶段回放**（memory_hit / conflict 套件）：
+等待采用**两阶段回放**（memory_hit / conflict 套件；long_turn 于 fix_v8_lt
+轮加入——每组 30 轮回放后、final probe 前，以该组全部 `turn["fact_keys"]`
+复用同一等待函数）：
 
 1. 阶段1：回放全部场景（录入→干扰，或 旧事实→干扰→新事实→干扰），
    不等待、不采集
@@ -181,7 +183,9 @@ Recall@5 被拉低到 0.35（对比单套件口径 fix_v3_mh 的 0.636）。
   Rate 0.0（vs 基线 0.625）；Precision 0.989 / Context Precision 0.938
   均为历史最佳
 
-**口径约定**：依赖异步落库的套件（memory_hit / conflict）评测时必须
-独立账号**分套件跑**（即 fix_v3 / fix_v3_mh 的方式，套件级 A/B 读数以
-那两轮为准）；`--suite all` 适合 long_turn / task_continuity 这类不依赖
-等待的套件，或作为容量观测（队列深度/消化速率）压测口径。
+**口径约定**：依赖异步落库的套件（memory_hit / conflict / long_turn——
+fix_v7_lt 实锤 long_turn 的 30 轮连发同样触发队列积压：`learning.kafka`
+probe 结束 5 分钟后才落库，0/2 系 probe 抢跑伪影）评测时必须独立账号
+**分套件跑**（即 fix_v3 / fix_v3_mh 的方式，套件级 A/B 读数以那两轮
+为准）；`--suite all` 适合 task_continuity 这类同步落库套件，或作为
+容量观测（队列深度/消化速率）压测口径。

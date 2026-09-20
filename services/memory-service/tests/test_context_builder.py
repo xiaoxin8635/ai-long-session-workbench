@@ -165,6 +165,31 @@ def test_render_structure_and_empty_sections() -> None:
     assert "<tool_results>" not in system_msg
 
 
+def test_procedural_wrapper_carries_behavior_directive() -> None:
+    """procedural 包裹标签内注入行为引导语（长对话偏好遵循补丁）。
+
+    引导语须位于包裹开标签与首条记忆之间；semantic 区块无引导语不受影响。
+    """
+    candidates = ContextCandidates(
+        system_prompt="系统提示",
+        procedural=(_item("偏好简洁回答", "pref.style", 0.9),),
+        semantic=(_item("用户住在杭州", "profile.city", 0.8),),
+        working=({"role": "user", "content": "问"},),
+    )
+    result = ContextBuilder.assemble(candidates, _make_budget())
+    system_msg = result.messages[0]["content"]
+
+    assert "必须逐条遵守" in system_msg
+    assert (
+        system_msg.index("<procedural_memories>")
+        < system_msg.index("必须逐条遵守")
+        < system_msg.index('<memory type="procedural"')
+    )
+    # semantic 区块无引导语（不重复注入指令）
+    semantic_start = system_msg.index("<semantic_memories>")
+    assert "必须逐条遵守" not in system_msg[semantic_start:]
+
+
 def test_assemble_total_bounded_under_available() -> None:
     """总量有界：候选远超预算时装配结果仍 ≤ available（全局防线兜底）。"""
     big = [

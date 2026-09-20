@@ -99,6 +99,10 @@ class Settings(BaseSettings):
     dedup_similarity_threshold: float = 0.92  # 向量相似度判重阈值
     # 疑似冲突召回阈值（低于判重阈值：仅送仲裁、禁 MERGE，Fix A）
     conflict_similarity_threshold: float = 0.80
+    # CONFLICTED（待用户裁决）条目参与检索的综合分惩罚系数（评测优化轮补丁：
+    # Fix A 副作用修复——待裁决条目若被检索排除，信息会从上下文静默消失；
+    # 降权使其排在同条件 ACTIVE 之后，预算紧张时优先被裁掉）
+    conflicted_retrieval_penalty: float = 0.6
     retrieval_candidate_k: int = 20  # 向量召回候选数（重排前）
     retrieval_top_k: int = 8  # 最终返回条数
     task_brief_max_session_messages: int = 6  # 任务简报仅在会话早期注入（消息总数 ≤ 该值）

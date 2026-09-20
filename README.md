@@ -82,5 +82,5 @@ docker exec workbench-memory alembic upgrade head
 
 ## License 说明
 
-- 全部代码（`frontend/`、`services/memory-service/`、`deploy/` 等）均为自研：个人项目，拟 MIT（待定）
+- 全部代码（`frontend/`、`services/memory-service/`、`deploy/` 等）均为自研：个人项目，以 [MIT](LICENSE) 发布
 - Open WebUI：仓库不含其源码、无二开代码（阶段1 仅官方镜像运行 + 自研 Pipe 脚本桥接），不涉及上游 license 义务；Pipe 脚本为自研代码

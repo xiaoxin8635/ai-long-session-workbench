@@ -413,7 +413,10 @@ async def search_candidates(
     embedding: list[float],
     candidate_k: int,
 ) -> list[tuple[Memory, float]]:
-    """检索读路径的向量召回：active/未过期/归属过滤 + 余弦近邻 top-k。
+    """检索读路径的向量召回：active + conflicted/未过期/归属过滤 + 余弦近邻 top-k。
+
+    CONFLICTED（待用户裁决）条目参与召回（由检索器降权排序）：全部排除会使
+    待裁决期间的信息从上下文静默消失（评测优化轮实锤的 Fix A 副作用）。
 
     Args:
         db: 数据库会话。
@@ -432,7 +435,8 @@ async def search_candidates(
         .where(
             Memory.workspace_id == ws_id,
             Memory.user_id == user_id,
-            Memory.status == MemoryStatus.ACTIVE,
+            # CONFLICTED 参与召回（检索器降权）：待裁决 ≠ 信息消失
+            Memory.status.in_([MemoryStatus.ACTIVE, MemoryStatus.CONFLICTED]),
             Memory.memory_type.in_(_RETRIEVAL_TYPES),
             Memory.embedding.is_not(None),
             or_(Memory.expires_at.is_(None), Memory.expires_at > now),

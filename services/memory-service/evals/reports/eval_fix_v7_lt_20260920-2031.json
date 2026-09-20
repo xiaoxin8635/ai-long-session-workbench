@@ -1,0 +1,58 @@
+{
+  "meta": {
+    "label": "fix_v7_lt",
+    "generated_at": "2026-09-20T12:31:51.912644+00:00",
+    "samples": {
+      "long_turn": 2
+    },
+    "errors": {
+      "long_turn": []
+    },
+    "judge_effective": {
+      "context_precision": 2,
+      "hallucination": 0
+    },
+    "token_note": "actual_avg=2645 baseline_avg≈10369（全量历史字符上界近似；绝对值仅供参考，以 A/B 相对变化为主）"
+  },
+  "metrics": {
+    "memory_recall_at_5": 0.0,
+    "memory_precision": 0.0,
+    "context_precision": 0.625,
+    "long_turn_consistency": 0.0,
+    "fact_conflict_rate": 0.0,
+    "hallucination_rate": 0.0,
+    "token_savings": 0.7449487996739605,
+    "p95_ttfb_ms": 1510.08520999967,
+    "p95_e2e_ms": 30060.82325500049,
+    "task_continuity": 0.0
+  },
+  "auxiliary": {
+    "conflict_answer_accuracy": null,
+    "long_turn_assert": "0/2",
+    "task_assert": null,
+    "suite_rows": {
+      "long_turn": [
+        {
+          "id": "lt-01",
+          "assert": false,
+          "missed": [
+            "两小时 / 晚上"
+          ],
+          "injected": 8,
+          "answer": "下周聚焦「数据库索引与查询优化」弱项闭环，节奏紧凑但不超载：\n\n- 周一：用订单表实战复合索引（3场景+EXPLAIN验证）  \n- 周二：精读 PostgreSQL 官方文档「Index Types」章 + 对照你线上慢SQL调优  \n- 周三：字节初筛前复盘（提前2天推送3题）+ 晚7点模拟面试（45分钟）  \n- 周四：Kafka `ConsumerCoordinator` 源码精读（重平衡状态机+syncGroup触发）  \n- 周五：用支付网关真实case写一页纸项目亮点（已结构化，直接填充数据）  \n\n全部任务已自动加入待办清单，需我立刻生成或调整？",
+          "ttfb_ms": 1521.3
+        },
+        {
+          "id": "lt-02",
+          "assert": false,
+          "missed": [
+            "Kafka / 消息队列"
+          ],
+          "injected": 8,
+          "answer": "基于你当前背景（推荐算法 + 订单/支付后端）、明确目标（字节 AI 应用岗、下周三初筛）、真实约束（周日下午学习、周日上午陪家人），以及已确认的技术路径（RAG 为主、bge-m3 embedding 已落地、Chroma 向量库兼容），我为你定制了 **「两周攻坚计划」**，聚焦「最小可行竞争力」——即：**让面试官在 5 分钟内确信你既能写代码，又懂 AI 应用的业务逻辑闭环。**\n\n---\n\n### 📅 第 1 周（6.10–6.16）｜夯实 RAG 工程骨架  \n**核心目标：跑通一个 *电商售后场景* 的可演示 RAG demo（含缓存、降噪、fallback）**  \n✅ *为什么选售后？* —— 你熟悉订单/支付链路，天然理解“用户问‘退货超时怎么办’”背后的业务规则、状态机与 SLA 要求，比通用 QA 更有说服力。  \n\n| 时间 | 学习内容 | 交付物 | 关联你现",
+          "ttfb_ms": 1296.4
+        }
+      ]
+    }
+  }
+}

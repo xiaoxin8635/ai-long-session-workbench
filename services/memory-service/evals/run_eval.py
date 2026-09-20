@@ -478,11 +478,17 @@ async def _wait_keywords_visible(
 
 
 async def run_long_turn(ec: EvalClient, groups: list[dict]) -> SuiteOutcome:
-    """长对话集：逐组回放 → final probe 流式断言 + judge。
+    """长对话集：逐组回放 → 批量等待事实落库 → final probe 流式断言 + judge。
 
     产出：Long-turn Consistency、Context Precision（judge）、P95 ttfb/e2e 采样。
     逐行明细（id/未命中关键词组/注入条数/answer 截断）随 extra["rows"] 入库，
     断言失败时可区分"上下文未注入"与"注入了但模型没答"两类根因。
+
+    等待落库与 memory_hit/conflict 集对齐（复用 _wait_keywords_visible）：
+    30 轮连发的后台抽取是串行队列，尾部积压数分钟，probe 抢跑会把队列
+    延迟误判为系统 FAIL（fix_v7_lt 实锤：learning.kafka 20:35:59 才落库，
+    probe 20:31 已回答完毕，Kafka 重点被误判为未注入）。等待关键词取每轮
+    turn["fact_keys"] 汇总（对剧本事实的覆盖即对断言关键词的覆盖）。
     """
     outcome = SuiteOutcome(name="long_turn")
     ttfb_samples: list[float] = []
@@ -498,6 +504,13 @@ async def run_long_turn(ec: EvalClient, groups: list[dict]) -> SuiteOutcome:
                 r = await ec.chat(messages, session_id=session_id)
                 session_id = r["session_id"]
                 messages.append({"role": "assistant", "content": r["content"]})
+            # 批量等待本组事实全部落库可见（口径对齐异步抽取写路径，见 docstring）。
+            # timeout=600：组内积压上限 ≈ 本组回放时长（~6 分钟）；fact_keys 与
+            # 抽取产物字面不保证一致（fix_v8_lt 实测"消息队列"未出现在任何
+            # content 而其同义事实"Kafka 入门"已落库），顽固词空转满超时才放行，
+            # 600s 在覆盖积压与限制浪费间取平衡。
+            facts = [kw for t in g["turns"] for kw in (t.get("fact_keys") or [])]
+            await _wait_keywords_visible(ec, facts, timeout=600.0)
             # final probe：preview 采集注入 → 流式回答（测 ttfb）→ 规则断言 + judge
             probe = g["final_probe"]
             messages.append({"role": "user", "content": probe["u"]})

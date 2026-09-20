@@ -1,0 +1,56 @@
+{
+  "meta": {
+    "label": "fix_v8_lt",
+    "generated_at": "2026-09-20T13:55:30.265098+00:00",
+    "samples": {
+      "long_turn": 2
+    },
+    "errors": {
+      "long_turn": []
+    },
+    "judge_effective": {
+      "context_precision": 2,
+      "hallucination": 0
+    },
+    "token_note": "actual_avg=2628 baseline_avg≈8801（全量历史字符上界近似；绝对值仅供参考，以 A/B 相对变化为主）"
+  },
+  "metrics": {
+    "memory_recall_at_5": 0.0,
+    "memory_precision": 0.0,
+    "context_precision": 0.8125,
+    "long_turn_consistency": 0.5,
+    "fact_conflict_rate": 0.0,
+    "hallucination_rate": 0.0,
+    "token_savings": 0.7014176495165771,
+    "p95_ttfb_ms": 1393.3119249999436,
+    "p95_e2e_ms": 29077.588844998947,
+    "task_continuity": 0.0
+  },
+  "auxiliary": {
+    "conflict_answer_accuracy": null,
+    "long_turn_assert": "1/2",
+    "task_assert": null,
+    "suite_rows": {
+      "long_turn": [
+        {
+          "id": "lt-01",
+          "assert": false,
+          "missed": [
+            "两小时 / 晚上"
+          ],
+          "injected": 8,
+          "answer": "下周计划（每天≤1.5h，聚焦弱项+字节冲刺）：\n\n**Mon**：PostgreSQL索引实战——用你订单库的`SELECT * FROM order WHERE status = 'pending' AND created_at < '2024-06-01'`，现场`EXPLAIN`并建复合索引  \n**Tue**：Kafka源码精读——`ConsumerCoordinator.handleSyncGroup()`如何防重复消费（直接关联你物流服务重启问题）  \n**Wed**：字节初筛模拟——严格按「3句话讲清事件解耦」练3遍（录音自测）  \n**Thu**：索引优化补漏——读PostgreSQL官方《Index Usage》第3章（只读「When to Use Indexes」小节）  \n**Fri**：分布式一致性——用你订单履约项目中的「库存扣减+物流发单」双写场景，手写幂等性",
+          "ttfb_ms": 1398.7
+        },
+        {
+          "id": "lt-02",
+          "assert": true,
+          "missed": [],
+          "injected": 8,
+          "answer": "好的，已结合你全部背景（推荐算法出身、RAG 工程落地为当前主线、系统设计是薄弱点、数学功底扎实、周五晚复盘+周日下午学习）和近期关键节点（下周一与字节学长交流、6月14日前完成 Kafka+Redis 学习复盘），为你定制 **「两周聚焦式攻坚计划」**，目标明确：**补系统设计短板 + 深化 RAG 工程纵深 + 无缝衔接面试实战**。\n\n---\n\n### 📅 整体节奏原则（严格遵循你的 procedural memory）\n- **每周五晚 20:00–21:30**：固定学习复盘（Kafka + Redis + 本周 RAG 实践小结）  \n- **每周日下午 14:00–17:00**：深度学习/编码实践（含文档阅读、代码调试、接口压测）  \n- **避开周六上午**（陪家人）、**不安排碎片化任务**（所有学习块 ≥ 90 分钟）  \n- **所有内容含公式/推导**（尊重你的",
+          "ttfb_ms": 1291.9
+        }
+      ]
+    }
+  }
+}

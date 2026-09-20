@@ -59,6 +59,15 @@ _SECTION_TAGS: dict[SectionKey, tuple[str, str]] = {
     SectionKey.TOOL_RESULTS: ("tool_result", "tool_results"),
 }
 
+# 区块包裹标签内的行为引导语（渲染在首条之前；评测优化轮补丁——长对话
+# 末轮 probe 时偏好条目注入了但模型未遵守，显式指令提醒后遵循率显著提升）
+_WRAPPER_HINTS: dict[SectionKey, str] = {
+    SectionKey.PROCEDURAL: (
+        "以下为用户的持久偏好与约定（作息时段、可用时长、沟通风格、优先级等），"
+        "制定计划、安排日程与给建议时必须逐条遵守。"
+    ),
+}
+
 # 检索结果 memory_type → 注入区块的映射
 _RETRIEVAL_BUCKETS: dict[MemoryType, SectionKey] = {
     MemoryType.PROCEDURAL: SectionKey.PROCEDURAL,
@@ -271,7 +280,10 @@ class ContextBuilder:
 
     @staticmethod
     def _render_tagged(key: SectionKey, items: list[Any]) -> list[str]:
-        """把一个记忆类区块渲染为包裹标签 + 逐条结构化标签（空区块返回空）。"""
+        """把一个记忆类区块渲染为包裹标签 + 逐条结构化标签（空区块返回空）。
+
+        配置了引导语的区块（见 _WRAPPER_HINTS）在包裹标签内首行注入行为指令。
+        """
         if not items:
             return []
         tag, wrapper = _SECTION_TAGS[key]
@@ -287,7 +299,11 @@ class ContextBuilder:
                 for item in items
                 if isinstance(item, ContextItem)
             ]
-        return [f"<{wrapper}>", *lines, f"</{wrapper}>"]
+        head = [f"<{wrapper}>"]
+        hint = _WRAPPER_HINTS.get(key)
+        if hint:
+            head.append(hint)
+        return [*head, *lines, f"</{wrapper}>"]
 
     # ---- 高层取数编排（ChatService 主链路调用） ----
 

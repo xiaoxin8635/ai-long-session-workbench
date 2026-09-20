@@ -787,3 +787,51 @@ async def test_record_hits_out_of_order_ids_persisted() -> None:
         assert MemoryEventType.HIT in [e.event_type for e in await _events_of(db, first.id)]
     finally:
         await db.close()
+
+
+async def test_conflicted_entries_retrievable_with_penalty() -> None:
+    """CONFLICTED 待裁决条目参与检索且降权（Fix A 副作用修复）。
+
+    待裁决期间完全排除会使信息从上下文静默消失；修复后同条件（相似度/
+    importance 一致）下 CONFLICTED 仍可召回，但综合分低于 ACTIVE、排名靠后。
+    """
+    db, ws_id, user_id, sid = await _prepare()
+    try:
+        active = await memory_repo.create_memory(
+            db,
+            ws_id=ws_id,
+            user_id=user_id,
+            memory_type=MemoryType.SEMANTIC,
+            key="profile.city",
+            content="用户住在杭州",
+            confidence=0.9,
+            importance=0.9,
+            embedding=_basis(9),
+        )
+        conflicted = await memory_repo.create_memory(
+            db,
+            ws_id=ws_id,
+            user_id=user_id,
+            memory_type=MemoryType.SEMANTIC,
+            key="profile.region",
+            content="用户住在浙江",
+            confidence=0.9,
+            importance=0.9,
+            embedding=_basis(9),
+        )
+        conflicted.status = MemoryStatus.CONFLICTED
+        await db.commit()
+
+        embedding = FakeEmbedding()
+        embedding.register("用户住在哪座城市", _basis(9))
+        hits = await MemoryRetriever(embedding).retrieve(  # type: ignore[arg-type]
+            db, ws_id=ws_id, user_id=user_id, query="用户住在哪座城市"
+        )
+        # 两条不同 key 均召回；CONFLICTED 参与但排 ACTIVE 之后
+        assert [(h.memory.status, h.memory.key) for h in hits] == [
+            (MemoryStatus.ACTIVE, active.key),
+            (MemoryStatus.CONFLICTED, conflicted.key),
+        ]
+        assert hits[0].score > hits[1].score  # 惩罚系数生效
+    finally:
+        await db.close()

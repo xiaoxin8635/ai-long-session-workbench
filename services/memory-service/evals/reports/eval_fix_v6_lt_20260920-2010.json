@@ -1,0 +1,56 @@
+{
+  "meta": {
+    "label": "fix_v6_lt",
+    "generated_at": "2026-09-20T12:10:29.408637+00:00",
+    "samples": {
+      "long_turn": 2
+    },
+    "errors": {
+      "long_turn": []
+    },
+    "judge_effective": {
+      "context_precision": 2,
+      "hallucination": 0
+    },
+    "token_note": "actual_avg=2601 baseline_avg≈13032（全量历史字符上界近似；绝对值仅供参考，以 A/B 相对变化为主）"
+  },
+  "metrics": {
+    "memory_recall_at_5": 0.0,
+    "memory_precision": 0.0,
+    "context_precision": 0.7143,
+    "long_turn_consistency": 0.5,
+    "fact_conflict_rate": 0.0,
+    "hallucination_rate": 0.0,
+    "token_savings": 0.800435914827045,
+    "p95_ttfb_ms": 1275.3070000000434,
+    "p95_e2e_ms": 47305.475005000284,
+    "task_continuity": 0.0
+  },
+  "auxiliary": {
+    "conflict_answer_accuracy": null,
+    "long_turn_assert": "1/2",
+    "task_assert": null,
+    "suite_rows": {
+      "long_turn": [
+        {
+          "id": "lt-01",
+          "assert": true,
+          "missed": [],
+          "injected": 7,
+          "answer": "以下是为你量身定制的**下周复习计划（6天×1.5小时/天）**，严格遵循你的弱项优先级、时间偏好与求职目标，节奏张弛有度：\n\n---\n\n### 📅 **周一（MySQL索引攻坚）**  \n- **主题**：B+树原理 → 订单表联合索引实战  \n- **动作**：  \n  - 上午30min：手绘B+树插入/分裂过程，标注你订单表`order_id+status`的最左前缀匹配路径  \n  - 晚上7:00后60min：执行`EXPLAIN`分析当前慢查，加联合索引并压测P99延迟（目标≤400ms）  \n- **交付物**：1份带执行计划截图的优化报告（用于面试讲“性能归因”）\n\n### 📅 **周二（分布式一致性补漏）**  \n- **主题**：Redis Lua扣库存 → 对齐字节/美团强一致场景  \n- **动作**：  \n  - 晚上7:00后60min：重写你库存脚本，加入`",
+          "ttfb_ms": 1263.2
+        },
+        {
+          "id": "lt-02",
+          "assert": false,
+          "missed": [
+            "周日下午 / 通勤 / 一小时"
+          ],
+          "injected": 7,
+          "answer": "✅ 已结合你的背景（电商高并发实战 + Kafka/RAG/Redis 主动攻坚）、薄弱点（Kafka 消费组重平衡机制尚未吃透、RAG 中 embedding 与 rerank 的工程取舍尚缺实操）、时间节奏（每晚2小时 + 周末全天），为你定制 **「两周系统架构能力跃迁计划」**，聚焦「可写进简历的交付物」：\n\n---\n\n### 📅 **第1周：夯实 Kafka 深度 + 构建 RAG 最小闭环**\n| 时间 | 学习目标 | 具体动作 | 交付物 |\n|------|----------|-----------|--------|\n| **今晚（Mon）20:00–22:00** | 理清 Kafka 重平衡触发条件与性能瓶颈 | ▸ 精读《Kafka 权威指南》Ch6.3（已为你存知识库，需我调取？）<br>▸ 用你熟悉的订单履约场景画图：消费者扩容时，如何避免「全组重平衡→消息",
+          "ttfb_ms": 1275.9
+        }
+      ]
+    }
+  }
+}
