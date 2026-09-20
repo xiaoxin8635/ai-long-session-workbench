@@ -92,6 +92,10 @@ export async function deleteKnowledgeFile(workspaceId: string, fileId: string): 
 /**
  * 知识检索调试（与 chat RAG 区块同口径）。
  *
+ * 超时单独放宽到 70s：服务端 rerank 超时降级路径最坏 30s×2 次尝试 + 向量/BM25，
+ * 全局 15s 超时会在 CPU 推理繁忙时（本地 infinity 单机）误报超时——检索调试是
+ * 显式触发的调试工具，等待属于用户预期。
+ *
  * @param workspaceId - workspace ID。
  * @param query - 检索查询。
  * @param topK - 返回条数（1-20，缺省用服务端配置）。
@@ -105,7 +109,7 @@ export async function searchKnowledge(
   const { data } = await api.post<KnowledgeSearchResult>(
     "/api/knowledge/search",
     { query, ...(topK !== undefined ? { top_k: topK } : {}) },
-    { params: { workspace_id: workspaceId } }
+    { params: { workspace_id: workspaceId }, timeout: 70_000 }
   );
   return data;
 }
