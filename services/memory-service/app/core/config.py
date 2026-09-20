@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     embedding_api_key: str | None = None  # 本地服务无需鉴权，云 API 时填写
     embedding_timeout_seconds: float = 30.0
     embedding_max_retries: int = 1
+    embedding_batch_size: int = 16  # 单批条数上限：大批量分批发送，防单请求超时并占死本地推理队列
     embedding_dim: int = 1024  # bge-m3 dense 维度（与模型解耦的部署约定）
 
     # ---- Rerank（M-07 RAG 精排；infinity /rerank，不可用降级 RRF 直排）----
