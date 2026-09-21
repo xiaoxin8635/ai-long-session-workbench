@@ -104,8 +104,24 @@ class FakeJsonLLM:
         return reply, LLMUsage(prompt_tokens=0, completion_tokens=0)
 
 
-def _fact_json(key: str, content: str, **overrides: object) -> str:
-    """构造单条抽取事实的 LLM JSON 回复。"""
+def _fact_json(
+    key: str,
+    content: str,
+    source_ids: list[uuid.UUID] | None = None,
+    **overrides: object,
+) -> str:
+    """构造单条抽取事实的 LLM JSON 回复。
+
+    Args:
+        key: 记忆主题键。
+        content: 事实正文。
+        source_ids: 溯源消息 ID（B1 后验过滤要求非空且指向本轮消息；
+            None 仅供显式测试过滤分支时使用）。
+        overrides: 其余字段的覆盖值（confidence/memory_type 等）。
+
+    Returns:
+        LLM 抽取回复的 JSON 字符串。
+    """
     fact: dict[str, object] = {
         "key": key,
         "content": content,
@@ -113,7 +129,7 @@ def _fact_json(key: str, content: str, **overrides: object) -> str:
         "confidence": 0.9,
         "importance": 0.8,
         "ttl_days": None,
-        "source_message_ids": [],
+        "source_message_ids": [str(sid) for sid in (source_ids or [])],
     }
     fact.update(overrides)
     return json.dumps({"facts": [fact]}, ensure_ascii=False)
@@ -174,7 +190,10 @@ async def test_extract_then_retrieve_hits() -> None:
     """用例 1：注入事实 → 新检索命中，hit_count 与 HIT 事件回写。"""
     db, ws_id, user_id, sid = await _prepare()
     try:
-        llm = FakeJsonLLM([_fact_json("skill.langgraph", "用户熟悉 LangGraph")])
+        messages = _round_messages("我最近在用 LangGraph 开发")
+        llm = FakeJsonLLM(
+            [_fact_json("skill.langgraph", "用户熟悉 LangGraph", source_ids=[messages[0][0]])]
+        )
         embedding = FakeEmbedding()
         content_vector = _basis(3)
         embedding.register("用户熟悉 LangGraph", content_vector)
@@ -184,7 +203,7 @@ async def test_extract_then_retrieve_hits() -> None:
             ws_id=ws_id,
             user_id=user_id,
             session_id=sid,
-            messages=_round_messages("我最近在用 LangGraph 开发"),
+            messages=messages,
         )
         assert len(written) == 1
         assert written[0].key == "skill.langgraph"
@@ -217,9 +236,12 @@ async def test_conflict_supersede_builds_version_chain() -> None:
     """用例 2：同 key 矛盾且新事实可信 → 旧条 superseded + 新条挂版本链。"""
     db, ws_id, user_id, sid = await _prepare()
     try:
+        messages = _round_messages("其实我早就不写前端了")
         llm = FakeJsonLLM(
             [
-                _fact_json("skill.frontend", "用户不熟悉前端"),  # 第一次：抽取
+                _fact_json(
+                    "skill.frontend", "用户不熟悉前端", source_ids=[messages[0][0]]
+                ),  # 第一次：抽取
                 '{"action": "supersede"}',  # 第二次：仲裁
             ]
         )
@@ -243,7 +265,7 @@ async def test_conflict_supersede_builds_version_chain() -> None:
             ws_id=ws_id,
             user_id=user_id,
             session_id=sid,
-            messages=_round_messages("其实我早就不写前端了"),
+            messages=messages,
         )
         assert len(written) == 1
         new = written[0]
@@ -263,9 +285,10 @@ async def test_conflict_coexist_marks_both_conflicted() -> None:
     """用例 3：仲裁无法判定 → 双条 conflicted 待用户裁决。"""
     db, ws_id, user_id, sid = await _prepare()
     try:
+        messages = _round_messages("我是素食主义者")
         llm = FakeJsonLLM(
             [
-                _fact_json("diet.preference", "用户吃素"),  # 抽取
+                _fact_json("diet.preference", "用户吃素", source_ids=[messages[0][0]]),  # 抽取
                 '{"action": "coexist"}',  # 仲裁
             ]
         )
@@ -288,7 +311,7 @@ async def test_conflict_coexist_marks_both_conflicted() -> None:
             ws_id=ws_id,
             user_id=user_id,
             session_id=sid,
-            messages=_round_messages("我是素食主义者"),
+            messages=messages,
         )
         assert len(written) == 1
         new = written[0]
@@ -305,9 +328,12 @@ async def test_conflict_independent_keeps_both_active() -> None:
     """用例 3b：同主题不矛盾的并行事实 → INDEPENDENT 双条 ACTIVE 并存、不打冲突标。"""
     db, ws_id, user_id, sid = await _prepare()
     try:
+        messages = _round_messages("我每天晚上都会复习两个小时")
         llm = FakeJsonLLM(
             [
-                _fact_json("schedule.availability", "用户每天晚上复习两小时"),  # 抽取
+                _fact_json(
+                    "schedule.availability", "用户每天晚上复习两小时", source_ids=[messages[0][0]]
+                ),  # 抽取
                 '{"action": "independent"}',  # 仲裁
             ]
         )
@@ -330,7 +356,7 @@ async def test_conflict_independent_keeps_both_active() -> None:
             ws_id=ws_id,
             user_id=user_id,
             session_id=sid,
-            messages=_round_messages("我每天晚上都会复习两个小时"),
+            messages=messages,
         )
         assert len(written) == 1
         new = written[0]
@@ -357,6 +383,20 @@ def test_arbitrate_prompt_documents_independent() -> None:
     # fix_v11_mh 回归：问句脑补"用户未提供 X"污染既有 key（28 对 conflicted
     # 的根因）——抽取 prompt 必须显式禁止从问句推断否定性事实
     assert "禁止推断" in EXTRACT_SYSTEM and "否定性事实" in EXTRACT_SYSTEM
+
+
+def test_extract_prompt_documents_fidelity_rules() -> None:
+    """B1 保真硬规则：数字/时间原样保留、专名不意译（防 prompt 回退）。
+
+    fix_v13_lt 实锤：薪资「21k/两万五」、时间「两小时/周日下午」被抽取
+    改写为「21000/2小时」等，检索命中后生成层也无法复述期望字面——
+    保真规则必须文档化锁定在 EXTRACT_SYSTEM。
+    """
+    from app.memory.prompts import EXTRACT_SYSTEM
+
+    assert "原样保留用户的表述" in EXTRACT_SYSTEM
+    assert "不做换算" in EXTRACT_SYSTEM
+    assert "专名保留原文" in EXTRACT_SYSTEM
 
 
 def test_retriever_weights_hit_matthew_clamp() -> None:
@@ -505,9 +545,14 @@ async def test_merge_updates_old_memory() -> None:
     """语义一致 → MERGE：旧条目 content/confidence 更新、version 自增、不新建。"""
     db, ws_id, user_id, sid = await _prepare()
     try:
+        messages = _round_messages("我还用 LangSmith 做观测")
         llm = FakeJsonLLM(
             [
-                _fact_json("skill.langgraph", "用户熟悉 LangGraph 与 LangSmith"),
+                _fact_json(
+                    "skill.langgraph",
+                    "用户熟悉 LangGraph 与 LangSmith",
+                    source_ids=[messages[0][0]],
+                ),
                 '{"action": "merge", "merged_content": "用户熟悉 LangGraph 及其生态（LangSmith）", '
                 '"merged_confidence": 0.95}',
             ]
@@ -531,7 +576,7 @@ async def test_merge_updates_old_memory() -> None:
             ws_id=ws_id,
             user_id=user_id,
             session_id=sid,
-            messages=_round_messages("我还用 LangSmith 做观测"),
+            messages=messages,
         )
         assert written == [old]  # 合并写回旧条目
         assert old.content == "用户熟悉 LangGraph 及其生态（LangSmith）"
@@ -679,7 +724,10 @@ async def test_known_keys_injected_into_extract_prompt() -> None:
         )
         await db.commit()
 
-        llm = FakeJsonLLM([_fact_json("contact.email", "用户邮箱 a@b.com")])
+        messages = _round_messages("我邮箱是 a@b.com")
+        llm = FakeJsonLLM(
+            [_fact_json("contact.email", "用户邮箱 a@b.com", source_ids=[messages[0][0]])]
+        )
         embedding = FakeEmbedding()
         embedding.register("用户邮箱 a@b.com", _basis(1))  # 与旧条正交：不触发冲突路径
         written = await _pipeline(llm, embedding).run(
@@ -687,7 +735,7 @@ async def test_known_keys_injected_into_extract_prompt() -> None:
             ws_id=ws_id,
             user_id=user_id,
             session_id=sid,
-            messages=_round_messages("我邮箱是 a@b.com"),
+            messages=messages,
         )
         assert len(written) == 1
         # 抽取调用的 system prompt 中出现既有 key（复用规则生效）
@@ -702,9 +750,10 @@ async def test_suspect_conflict_layer_supersedes() -> None:
     """Fix A：疑似冲突层（0.80 ≤ sim < 0.92）命中 → 仲裁 supersede 生效。"""
     db, ws_id, user_id, sid = await _prepare()
     try:
+        messages = _round_messages("我换手机号了，13911112222")
         llm = FakeJsonLLM(
             [
-                _fact_json("profile.phone", "用户手机号 13911112222"),
+                _fact_json("profile.phone", "用户手机号 13911112222", source_ids=[messages[0][0]]),
                 '{"action": "supersede"}',
             ]
         )
@@ -730,7 +779,7 @@ async def test_suspect_conflict_layer_supersedes() -> None:
             ws_id=ws_id,
             user_id=user_id,
             session_id=sid,
-            messages=_round_messages("我换手机号了，13911112222"),
+            messages=messages,
         )
         assert len(written) == 1
         new = written[0]
@@ -748,9 +797,12 @@ async def test_suspect_conflict_merge_downgraded_to_coexist() -> None:
     """Fix A：疑似冲突层命中且仲裁判 merge → 降级 COEXIST（防误合并）。"""
     db, ws_id, user_id, sid = await _prepare()
     try:
+        messages = _round_messages("我常住在西湖区")
         llm = FakeJsonLLM(
             [
-                _fact_json("profile.city.detail", "用户常住在杭州西湖区"),
+                _fact_json(
+                    "profile.city.detail", "用户常住在杭州西湖区", source_ids=[messages[0][0]]
+                ),
                 '{"action": "merge", "merged_content": "合并内容", "merged_confidence": 0.9}',
             ]
         )
@@ -775,7 +827,7 @@ async def test_suspect_conflict_merge_downgraded_to_coexist() -> None:
             ws_id=ws_id,
             user_id=user_id,
             session_id=sid,
-            messages=_round_messages("我常住在西湖区"),
+            messages=messages,
         )
         assert len(written) == 1
         new = written[0]
@@ -787,6 +839,120 @@ async def test_suspect_conflict_merge_downgraded_to_coexist() -> None:
         ).scalar_one()
         assert old_content == "用户住在杭州"  # 旧条未被合并改写
         assert new.supersedes_id is None
+    finally:
+        await db.close()
+
+
+# ---- 评测优化轮四期（B1 线：溯源后验过滤）----
+
+
+async def test_postfilter_drops_untraceable_and_fabricated_refs() -> None:
+    """B1 后验过滤：空引用/编造消息 ID 的候选被丢弃，脑补不入库。
+
+    fix_v12_mh 取证实锤库内 conflicted 34% 为抽取脑补（prompt 约束对
+    qwen-plus 非全量遵从）——代码级防线：无法溯源的候选一律丢弃。
+    """
+    db, ws_id, user_id, sid = await _prepare()
+    try:
+        messages = _round_messages("我手机号 13800000001，在字节跳动做后端")
+        ok_id = str(messages[0][0])
+        fabricated_id = str(uuid.uuid4())  # 不在本轮消息中（LLM 编造）
+        llm = FakeJsonLLM(
+            [
+                json.dumps(
+                    {
+                        "facts": [
+                            # 合法引用：应入库
+                            {
+                                "key": "contact.phone",
+                                "content": "用户手机号 13800000001",
+                                "memory_type": "semantic",
+                                "confidence": 0.9,
+                                "importance": 0.8,
+                                "ttl_days": None,
+                                "source_message_ids": [ok_id],
+                            },
+                            # 空引用：脑补高风险，丢弃
+                            {
+                                "key": "profile.employer",
+                                "content": "用户在字节跳动做后端",
+                                "memory_type": "semantic",
+                                "confidence": 0.9,
+                                "importance": 0.8,
+                                "ttl_days": None,
+                                "source_message_ids": [],
+                            },
+                            # 编造 ID：脑补直接信号，丢弃
+                            {
+                                "key": "profile.city",
+                                "content": "用户住在北京",
+                                "memory_type": "semantic",
+                                "confidence": 0.9,
+                                "importance": 0.8,
+                                "ttl_days": None,
+                                "source_message_ids": [fabricated_id],
+                            },
+                        ]
+                    },
+                    ensure_ascii=False,
+                )
+            ]
+        )
+        embedding = FakeEmbedding()
+        written = await _pipeline(llm, embedding).run(
+            db,
+            ws_id=ws_id,
+            user_id=user_id,
+            session_id=sid,
+            messages=messages,
+        )
+        assert len(written) == 1
+        assert written[0].key == "contact.phone"
+        memories = await _active_memories(db, ws_id)
+        assert len(memories) == 1  # 空引用与编造引用的候选均未入库
+    finally:
+        await db.close()
+
+
+async def test_postfilter_strips_fabricated_refs_keeps_valid() -> None:
+    """B1 后验过滤：混合引用剔除编造部分、保留合法部分入库（可追溯完整）。"""
+    db, ws_id, user_id, sid = await _prepare()
+    try:
+        messages = _round_messages("我手机号 13800000001")
+        ok_id = str(messages[0][0])
+        fabricated_id = str(uuid.uuid4())
+        llm = FakeJsonLLM(
+            [
+                json.dumps(
+                    {
+                        "facts": [
+                            {
+                                "key": "contact.phone",
+                                "content": "用户手机号 13800000001",
+                                "memory_type": "semantic",
+                                "confidence": 0.9,
+                                "importance": 0.8,
+                                "ttl_days": None,
+                                "source_message_ids": [fabricated_id, ok_id],
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                )
+            ]
+        )
+        embedding = FakeEmbedding()
+        written = await _pipeline(llm, embedding).run(
+            db,
+            ws_id=ws_id,
+            user_id=user_id,
+            session_id=sid,
+            messages=messages,
+        )
+        assert len(written) == 1
+        # 编造引用被剔除，入库条目仅保留可溯源的合法引用
+        # （JSONB 回读为 str 列表，与消息 UUID 对象比较需归一）
+        assert written[0].source_message_ids == [str(messages[0][0])]
     finally:
         await db.close()
 
@@ -816,7 +982,10 @@ async def test_deadlock_detected_retried_once() -> None:
                     raise DBAPIError("模拟死锁（测试注入）", None, _FakeDeadlockOrig())
                 return await super()._upsert_one(db, **kwargs)  # type: ignore[arg-type]
 
-        llm = FakeJsonLLM([_fact_json("skill.langgraph", "用户熟悉 LangGraph")])
+        messages = _round_messages("我最近在用 LangGraph 开发")
+        llm = FakeJsonLLM(
+            [_fact_json("skill.langgraph", "用户熟悉 LangGraph", source_ids=[messages[0][0]])]
+        )
         embedding = FakeEmbedding()
         pipeline = FlakyPipeline(
             extractor=MemoryExtractor(llm),
@@ -829,7 +998,7 @@ async def test_deadlock_detected_retried_once() -> None:
             ws_id=ws_id,
             user_id=user_id,
             session_id=sid,
-            messages=_round_messages("我最近在用 LangGraph 开发"),
+            messages=messages,
         )
         assert pipeline.upsert_calls == 2  # 首次失败 + 重试成功
         assert len(written) == 1

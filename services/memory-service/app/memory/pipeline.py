@@ -24,6 +24,7 @@ import asyncio
 import logging
 import uuid
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.exc import DBAPIError
@@ -36,7 +37,7 @@ from app.llm.embeddings import EmbeddingClient, EmbeddingError, get_embedding_cl
 from app.memory.conflict import ConflictResolver
 from app.memory.deduplicator import MemoryDeduplicator
 from app.memory.extractor import MemoryExtractor
-from app.memory.schemas import ConflictAction, ConflictOutcome, MemoryCandidate
+from app.memory.schemas import ConflictAction, ConflictOutcome, ExtractedFact, MemoryCandidate
 from app.models.memory import Memory
 from app.observability import tracing
 from app.repositories import memory_repo
@@ -65,6 +66,58 @@ def _is_deadlock(exc: BaseException) -> bool:
     if orig is None:
         return False
     return str(getattr(orig, "sqlstate", "")) == _DEADLOCK_SQLSTATE
+
+
+def _filter_untraceable(
+    facts: list[ExtractedFact],
+    messages: Sequence[tuple[uuid.UUID, str, str]],
+    *,
+    session_id: uuid.UUID,
+) -> list[ExtractedFact]:
+    """后验过滤：剔除无法溯源到本轮源消息的候选（B1 线，代码级防脑补）。
+
+    fix_v11_mh/fix_v12_mh 取证实锤库内 conflicted 占比 34%，主因为抽取
+    脑补（fix_v11 已加问句约束，但 prompt 约束对 qwen-plus 非全量遵从）。
+    本防线在代码层强制"记忆必须可溯源"：候选必须携带有效
+    source_message_ids（非空且指向本轮真实消息）——
+
+    - 空引用 → 丢弃：无法溯源的事实不可信，且破坏
+      memories.source_message_ids 的可追溯产品承诺
+    - 引用含本轮不存在的消息 ID → 剔除非法引用（LLM 编造 ID 是脑补
+      的直接信号）；剔除后仍有合法引用则保留合法部分，全空则丢弃
+
+    结构性校验零语义误杀风险：真实事实的源消息必然在本轮消息中。
+
+    Args:
+        facts: 置信度过滤后的候选事实。
+        messages: 本轮 (message_id, role, content) 全量消息。
+        session_id: 来源会话（日志定位用）。
+
+    Returns:
+        溯源校验通过的事实列表（部分非法引用已被剔除）。
+    """
+    valid_ids = {mid for mid, _role, _content in messages}
+    kept: list[ExtractedFact] = []
+    for fact in facts:
+        valid_refs = [sid for sid in fact.source_message_ids if sid in valid_ids]
+        dropped_refs = len(fact.source_message_ids) - len(valid_refs)
+        if dropped_refs:
+            logger.info(
+                "extract_postfilter_bad_source session=%s key=%s dropped_refs=%s",
+                session_id,
+                fact.key,
+                dropped_refs,
+            )
+        if not valid_refs:
+            logger.info(
+                "extract_postfilter_untraceable session=%s key=%s content=%s",
+                session_id,
+                fact.key,
+                fact.content[:50],
+            )
+            continue
+        kept.append(fact if dropped_refs == 0 else replace(fact, source_message_ids=valid_refs))
+    return kept
 
 
 class ExtractPipeline:
@@ -121,6 +174,9 @@ class ExtractPipeline:
             logger.warning("extract_skipped session=%s error=%s", session_id, exc)
             return []
         facts = [f for f in facts if f.confidence >= settings.extract_min_confidence]
+        # B1 线后验过滤：溯源校验失败（空引用/编造消息 ID）的候选丢弃，
+        # 治抽取脑补入库（conflicted 34% 的代码级防线）
+        facts = _filter_untraceable(facts, messages, session_id=session_id)
         if not facts:
             return []
 
