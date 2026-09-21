@@ -1003,7 +1003,10 @@ async def main() -> int:
         default="all",
         choices=["all", "long_turn", "memory_hit", "conflict", "task_continuity"],
     )
-    parser.add_argument("--base-url", default="http://localhost:8100")
+    # 默认 127.0.0.1 而非 localhost：Windows 上 wslrelay 会劫持 [::1]（IPv6
+    # localhost 优先解析），把请求导进 WSL 转发层返回 502（wslrelay [::1]
+    # 劫持坑，fix_v13 复现实锤）；强制 IPv4 直连 Docker 端口映射。
+    parser.add_argument("--base-url", default="http://127.0.0.1:8100")
     parser.add_argument("--username", default="evalbot")
     parser.add_argument("--password", default="evalbot-2026")
     parser.add_argument("--baseline", default=None, help="旧报告 JSON 路径（生成对比列）")
