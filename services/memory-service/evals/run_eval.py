@@ -660,7 +660,14 @@ async def run_memory_hit(
                 probes.append((injected, row["expected"]))
                 trap_probes.append((injected, row.get("traps") or []))
                 jctx = await _jctx(ec)
-                judge_raw.append(await judge_hallucination(jctx, row["probe"], rp["content"]))
+                # 注入记忆必须作为 hallucination judge 的依据来源传入：
+                # 带记忆注入的回答复述事实时，judge 看不到背景会全判幻觉
+                # （fix_v9_mh 20/20 误判实锤，与 context_precision 同口径）。
+                judge_raw.append(
+                    await judge_hallucination(
+                        jctx, row["probe"], rp["content"], [i.content for i in injected]
+                    )
+                )
                 samples += 1
                 hit = any(all(kw in i.content for kw in row["expected"]) for i in injected[:5])
             except (RuntimeError, httpx.HTTPError) as exc:

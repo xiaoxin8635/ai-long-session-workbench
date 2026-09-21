@@ -4,6 +4,8 @@ LLM 判定旧记忆与新事实的关系：
   - MERGE：语义一致 → 合并正文、提升 confidence
   - SUPERSEDE：矛盾且新事实可信 → 旧条目 superseded，新条目挂版本链
   - COEXIST：矛盾但无法判定 → 双条 conflicted，等待用户在记忆面板裁决
+  - INDEPENDENT：不矛盾的独立事实 → 双条各自 ACTIVE 并存、不打冲突标
+    （同主题并行事实的正确出口，防止 conflicted 误标畸高）
 
 LLM 失败时的保守降级：COEXIST（不丢任何一方信息）。
 """

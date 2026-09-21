@@ -6,3 +6,26 @@
 {"conflict_id": "cf-06", "scenario": "面试时间改期", "old_turn": "我周四下午三点有场面试。", "new_turn": "那场面试改到周五上午十点了，周四的取消了。", "gap": 3, "probe": "我的面试安排在什么时间？", "old_kw": "周四", "new_kw": "周五", "expected": ["周五", "十点"]}
 {"conflict_id": "cf-07", "scenario": "邮箱更换", "old_turn": "简历投递用 chenming.dev@example.com 这个邮箱。", "new_turn": "我换了新邮箱 cm2026@example.com，以后的投递都用新的。", "gap": 5, "probe": "现在简历投递应该用哪个邮箱？", "old_kw": "chenming.dev@example.com", "new_kw": "cm2026@example.com", "expected": ["cm2026@example.com"]}
 {"conflict_id": "cf-08", "scenario": "项目方向调整", "old_turn": "我的作品集项目是知识库问答助手。", "new_turn": "知识库项目烂尾了，我换了新方向，现在做的是简历诊断工具。", "gap": 4, "probe": "我现在的作品集项目是什么？", "old_kw": "知识库", "new_kw": "简历诊断", "expected": ["简历诊断"]}
+{"conflict_id": "cf-09", "scenario": "微信号更换", "old_turn": "我的微信号是 cm_dev_2023，方便联系。", "new_turn": "我换微信号了，现在是 chen2026work，旧的不再用了。", "gap": 3, "probe": "我的微信号是多少？", "old_kw": "cm_dev_2023", "new_kw": "chen2026work", "expected": ["chen2026work"]}
+{"conflict_id": "cf-10", "scenario": "居住区域变更", "old_turn": "我住在杭州滨江，租房。", "new_turn": "上个月搬家了，现在住余杭未来科技城那边，滨江的租约退了。", "gap": 5, "probe": "我现在住在杭州哪个区域？", "old_kw": "滨江", "new_kw": "余杭", "expected": ["余杭"]}
+{"conflict_id": "cf-11", "scenario": "证书状态变更", "old_turn": "我在准备 PMP 考试，还没考。", "new_turn": "PMP 我已经考过了，证书上周拿到手了。", "gap": 4, "probe": "我的 PMP 考试现在是什么状态？", "old_kw": "准备", "new_kw": "考过", "expected": ["考过"]}
+{"conflict_id": "cf-12", "scenario": "求职状态变更", "old_turn": "我目前在职，骑驴找马。", "new_turn": "我上个月正式离职了，现在是随时到岗状态。", "gap": 6, "probe": "我现在的求职状态是什么？", "old_kw": "在职", "new_kw": "离职", "expected": ["离职", "到岗"]}
+{"conflict_id": "cf-13", "scenario": "公司规模偏好变更", "old_turn": "我只考虑大厂，小公司不去。", "new_turn": "想法变了，我现在更愿意去有潜力的创业公司，大厂反而觉得卷。", "gap": 4, "probe": "我现在对公司规模的偏好是什么？", "old_kw": "大厂", "new_kw": "创业公司", "expected": ["创业公司"]}
+{"conflict_id": "cf-14", "scenario": "通勤方式变更", "old_turn": "我通勤主要坐地铁一号线。", "new_turn": "我买了辆车，现在通勤改自驾了，地铁基本不坐了。", "gap": 3, "probe": "我现在通勤用什么方式？", "old_kw": "地铁", "new_kw": "自驾", "expected": ["自驾"]}
+{"conflict_id": "cf-15", "scenario": "加班态度变更", "old_turn": "为了成长我可以接受高强度加班。", "new_turn": "身体扛不住了，我现在明确拒绝长期加班，九点后必须走。", "gap": 5, "probe": "我现在对加班的态度是什么？", "old_kw": "接受", "new_kw": "拒绝", "expected": ["拒绝"]}
+{"conflict_id": "cf-16", "scenario": "技术方向变更", "old_turn": "我深耕的方向是数据库内核。", "new_turn": "我转向中间件方向了，数据库内核作为背景不再作为求职主线。", "gap": 4, "probe": "我现在的主攻技术方向是什么？", "old_kw": "内核", "new_kw": "中间件", "expected": ["中间件"]}
+{"conflict_id": "cf-17", "scenario": "面试形式变更", "old_turn": "周四那场是现场面试，我已经约好了。", "new_turn": "对方通知改成视频面试了，不用跑现场了。", "gap": 3, "probe": "我周四的面试是什么形式？", "old_kw": "现场", "new_kw": "视频", "expected": ["视频"]}
+{"conflict_id": "cf-18", "scenario": "offer 答复期限变更", "old_turn": "那家给我的 offer 要在本周五前答复。", "new_turn": "我跟 HR 协商好了，答复期限延到下周三。", "gap": 4, "probe": "我的 offer 答复期限是什么时候？", "old_kw": "周五", "new_kw": "周三", "expected": ["周三"]}
+{"conflict_id": "cf-19", "scenario": "考试时间变更", "old_turn": "我软考安排在十月中旬考。", "new_turn": "考点取消了，我的软考改到十一月中旬考。", "gap": 3, "probe": "我的软考安排在什么时候？", "old_kw": "十月", "new_kw": "十一月", "expected": ["十一月"]}
+{"conflict_id": "cf-20", "scenario": "住房状态变更", "old_turn": "我现在是租房住，每个月房租三千二。", "new_turn": "房子过户完成了，我现在是有房一族，不用交房租了。", "gap": 6, "probe": "我现在是租房还是已购房？", "old_kw": "租房", "new_kw": "过户", "expected": ["过户", "有房"]}
+{"conflict_id": "cf-21", "scenario": "投递渠道变更", "old_turn": "我投简历主要走 BOSS 直聘。", "new_turn": "我停了 BOSS，现在全靠学长内推和猎头推荐。", "gap": 4, "probe": "我现在主要通过什么渠道投简历？", "old_kw": "BOSS", "new_kw": "内推", "expected": ["内推"]}
+{"conflict_id": "cf-22", "scenario": "主力开发环境变更", "old_turn": "我的主力开发机是 Windows 加 WSL。", "new_turn": "公司配了 MacBook，我现在主力开发环境换成 Mac 了。", "gap": 3, "probe": "我现在的主力开发环境是什么？", "old_kw": "Windows", "new_kw": "Mac", "expected": ["Mac"]}
+{"conflict_id": "cf-23", "scenario": "代码托管平台变更", "old_turn": "我的个人项目都托管在 Gitee 上。", "new_turn": "我把仓库全部迁移到 GitHub 了，Gitee 不再更新。", "gap": 4, "probe": "我的个人项目现在托管在哪个平台？", "old_kw": "Gitee", "new_kw": "GitHub", "expected": ["GitHub"]}
+{"conflict_id": "cf-24", "scenario": "学习节奏变更", "old_turn": "我每天只学一个小时，慢慢来。", "new_turn": "我提速了，现在每天雷打不动学两个半小时。", "gap": 5, "probe": "我现在每天的学习时长是多少？", "old_kw": "一个小时", "new_kw": "两个半小时", "expected": ["两个半小时"]}
+{"conflict_id": "cf-25", "scenario": "目标职级变更", "old_turn": "我这次跳槽的目标是 P6。", "new_turn": "面下来发现我估值应该更高，目标改成 P7 了。", "gap": 4, "probe": "我现在的目标职级是什么？", "old_kw": "P6", "new_kw": "P7", "expected": ["P7"]}
+{"conflict_id": "cf-26", "scenario": "远程偏好变更", "old_turn": "我可以接受纯远程办公。", "new_turn": "远程待了俩月太孤独了，我现在只考虑去办公室驻场。", "gap": 5, "probe": "我现在对远程办公的态度是什么？", "old_kw": "接受", "new_kw": "驻场", "expected": ["驻场"]}
+{"conflict_id": "cf-27", "scenario": "会议工具变更", "old_turn": "我们团队日常用腾讯会议开会。", "new_turn": "公司统一切到飞书会议了，腾讯会议弃用了。", "gap": 3, "probe": "我现在团队开会用什么工具？", "old_kw": "腾讯会议", "new_kw": "飞书", "expected": ["飞书"]}
+{"conflict_id": "cf-28", "scenario": "健身安排变更", "old_turn": "我每周去健身房三次，练力量。", "new_turn": "办卡到期没续，我改成每天晨跑五公里了。", "gap": 4, "probe": "我现在是怎么锻炼的？", "old_kw": "健身房", "new_kw": "晨跑", "expected": ["晨跑"]}
+{"conflict_id": "cf-29", "scenario": "导师/引路人变更", "old_turn": "带我复习的导师是李老师，专注八股。", "new_turn": "李老师太忙退出了，现在带我的是做系统设计的王老师。", "gap": 4, "probe": "现在带我复习的导师是谁？", "old_kw": "李老师", "new_kw": "王老师", "expected": ["王老师"]}
+{"conflict_id": "cf-30", "scenario": "主投城市再变更", "old_turn": "我找工作改成了只看成都。", "new_turn": "家人都在武汉，我最终决定回武汉发展，成都放弃了。", "gap": 6, "probe": "我现在最终决定在哪个城市发展？", "old_kw": "成都", "new_kw": "武汉", "expected": ["武汉"]}
+

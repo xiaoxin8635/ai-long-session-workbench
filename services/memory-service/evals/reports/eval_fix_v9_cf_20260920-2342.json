@@ -1,0 +1,188 @@
+{
+  "meta": {
+    "label": "fix_v9_cf",
+    "generated_at": "2026-09-20T15:42:21.397030+00:00",
+    "samples": {
+      "conflict": 30
+    },
+    "errors": {
+      "conflict": []
+    },
+    "judge_effective": {
+      "context_precision": 0,
+      "hallucination": 0
+    },
+    "token_note": "actual_avg=2227 baseline_avg≈1017（全量历史字符上界近似；绝对值仅供参考，以 A/B 相对变化为主）"
+  },
+  "metrics": {
+    "memory_recall_at_5": 0.0,
+    "memory_precision": 0.0,
+    "context_precision": 0.0,
+    "long_turn_consistency": 0.0,
+    "fact_conflict_rate": 0.0,
+    "hallucination_rate": 0.0,
+    "token_savings": -1.1901299103422835,
+    "p95_ttfb_ms": 0.0,
+    "p95_e2e_ms": 0.0,
+    "task_continuity": 0.0
+  },
+  "auxiliary": {
+    "conflict_answer_accuracy": 0.9,
+    "long_turn_assert": null,
+    "task_assert": null,
+    "suite_rows": {
+      "conflict": [
+        {
+          "id": "cf-01",
+          "wait_s": 0.2,
+          "answer": true
+        },
+        {
+          "id": "cf-03",
+          "wait_s": 0.2,
+          "answer": true
+        },
+        {
+          "id": "cf-02",
+          "wait_s": 0.2,
+          "answer": true
+        },
+        {
+          "id": "cf-04",
+          "wait_s": 0.2,
+          "answer": false
+        },
+        {
+          "id": "cf-06",
+          "wait_s": 0.2,
+          "answer": true
+        },
+        {
+          "id": "cf-07",
+          "wait_s": 0.2,
+          "answer": true
+        },
+        {
+          "id": "cf-09",
+          "wait_s": 0.2,
+          "answer": true
+        },
+        {
+          "id": "cf-05",
+          "wait_s": -1.0,
+          "answer": true
+        },
+        {
+          "id": "cf-08",
+          "wait_s": 0.2,
+          "answer": true
+        },
+        {
+          "id": "cf-10",
+          "wait_s": -1.0,
+          "answer": true
+        },
+        {
+          "id": "cf-11",
+          "wait_s": -1.0,
+          "answer": false
+        },
+        {
+          "id": "cf-13",
+          "wait_s": 5.4,
+          "answer": true
+        },
+        {
+          "id": "cf-14",
+          "wait_s": 15.7,
+          "answer": true
+        },
+        {
+          "id": "cf-12",
+          "wait_s": 0.2,
+          "answer": true
+        },
+        {
+          "id": "cf-16",
+          "wait_s": 114.7,
+          "answer": true
+        },
+        {
+          "id": "cf-18",
+          "wait_s": 130.3,
+          "answer": true
+        },
+        {
+          "id": "cf-17",
+          "wait_s": 125.1,
+          "answer": true
+        },
+        {
+          "id": "cf-20",
+          "wait_s": 151.1,
+          "answer": true
+        },
+        {
+          "id": "cf-19",
+          "wait_s": 156.3,
+          "answer": true
+        },
+        {
+          "id": "cf-21",
+          "wait_s": 166.4,
+          "answer": true
+        },
+        {
+          "id": "cf-22",
+          "wait_s": 161.4,
+          "answer": true
+        },
+        {
+          "id": "cf-23",
+          "wait_s": 181.8,
+          "answer": true
+        },
+        {
+          "id": "cf-25",
+          "wait_s": 202.8,
+          "answer": true
+        },
+        {
+          "id": "cf-24",
+          "wait_s": 186.8,
+          "answer": true
+        },
+        {
+          "id": "cf-26",
+          "wait_s": 207.8,
+          "answer": false
+        },
+        {
+          "id": "cf-27",
+          "wait_s": 218.0,
+          "answer": true
+        },
+        {
+          "id": "cf-15",
+          "wait_s": 20.8,
+          "answer": true
+        },
+        {
+          "id": "cf-29",
+          "wait_s": 243.2,
+          "answer": true
+        },
+        {
+          "id": "cf-30",
+          "wait_s": 238.2,
+          "answer": true
+        },
+        {
+          "id": "cf-28",
+          "wait_s": 233.2,
+          "answer": true
+        }
+      ]
+    }
+  }
+}

@@ -18,3 +18,83 @@
 {"fact_id": "mh-18", "fact_turn": "面试沟通上我不擅长闲聊，希望你帮我准备直接进入技术话题的开场。", "gap": 6, "probe": "面试开场我偏好什么样的沟通方式？", "expected": ["技术"], "traps": []}
 {"fact_id": "mh-19", "fact_turn": "我给自己定的求职截止时间是今年六月底之前必须定下来。", "gap": 4, "probe": "我的求职截止时间是什么时候？", "expected": ["六月"], "traps": [["九月"]]}
 {"fact_id": "mh-20", "fact_turn": "背调联系人我留的是前同事张伟，他现在在蚂蚁。", "gap": 5, "probe": "我的背调联系人是谁？现在在哪家公司？", "expected": ["张伟", "蚂蚁"], "traps": [["王"]]}
+{"fact_id": "mh-21", "fact_turn": "我硕士读的是华东师范大学的软件工程，2023 年毕业的。", "gap": 4, "probe": "我硕士是哪个学校什么专业毕业的？", "expected": ["华东师范", "软件工程"], "traps": [["复旦"], ["计算机"]]}
+{"fact_id": "mh-22", "fact_turn": "我英语六级 620 分，读写文档没问题。", "gap": 5, "probe": "我英语六级考了多少分？", "expected": ["620"], "traps": [["550"]]}
+{"fact_id": "mh-23", "fact_turn": "我在上海有三年工作经验，之前在一家电商公司做交易系统。", "gap": 3, "probe": "我在哪个城市工作？做了什么系统？", "expected": ["上海", "交易"], "traps": [["深圳"]]}
+{"fact_id": "mh-24", "fact_turn": "我的主语言是 Go，写四年了，Python 也会但不算精通。", "gap": 6, "probe": "我的主力编程语言是什么？用了几年？", "expected": ["Go", "四年"], "traps": [["Java"], ["两年"]]}
+{"fact_id": "mh-25", "fact_turn": "记一下我的 CKA 认证今年五月到期，需要续证。", "gap": 4, "probe": "我的 CKA 认证什么时候到期？", "expected": ["五月"], "traps": [["三月"]]}
+{"fact_id": "mh-26", "fact_turn": "我现在的职级是高级工程师，带三个人的小组。", "gap": 5, "probe": "我现在的职级和带团队规模是怎样的？", "expected": ["高级", "三个"], "traps": [["资深"], ["五个"]]}
+{"fact_id": "mh-27", "fact_turn": "我住浦东，通勤单程五十分钟地铁。", "gap": 3, "probe": "我住在哪个区？通勤多久？", "expected": ["浦东", "五十分钟"], "traps": [["闵行"]]}
+{"fact_id": "mh-28", "fact_turn": "我的开源项目叫 swiftlog，是个结构化日志库，有八百多个 star。", "gap": 6, "probe": "我的开源日志库叫什么名字？多少 star？", "expected": ["swiftlog", "八百"], "traps": [["fastlog"], ["三千"]]}
+{"fact_id": "mh-29", "fact_turn": "技术分享我每月给团队做一次，主题轮着来。", "gap": 4, "probe": "我多久给团队做一次技术分享？", "expected": ["每月"], "traps": [["每周"]]}
+{"fact_id": "mh-30", "fact_turn": "我的目标公司类型是基础软件赛道，数据库或消息队列方向。", "gap": 5, "probe": "我的目标公司是什么赛道方向？", "expected": ["数据库", "消息队列"], "traps": [["自动驾驶"]]}
+{"fact_id": "mh-31", "fact_turn": "部署这块我们用的 K8s 加 ArgoCD 做 GitOps。", "gap": 3, "probe": "我们的部署工具链是什么？", "expected": ["K8s", "ArgoCD"], "traps": [["Docker Compose"]]}
+{"fact_id": "mh-32", "fact_turn": "监控体系我们基于 Prometheus 和 Grafana 搭的。", "gap": 5, "probe": "我们的监控体系用了什么组件？", "expected": ["Prometheus", "Grafana"], "traps": [["Zabbix"]]}
+{"fact_id": "mh-33", "fact_turn": "我们消息中间件选的是 RocketMQ，之前从 RabbitMQ 迁过来的。", "gap": 4, "probe": "我们现在用的消息中间件是什么？从哪个迁过来的？", "expected": ["RocketMQ", "RabbitMQ"], "traps": [["Kafka"]]}
+{"fact_id": "mh-34", "fact_turn": "数据库我们主库 PostgreSQL 15，读库走了两个副本。", "gap": 6, "probe": "我们的主库是什么数据库？几个读副本？", "expected": ["PostgreSQL", "两个"], "traps": [["MySQL"], ["三个"]]}
+{"fact_id": "mh-35", "fact_turn": "CI 流水线我们用 GitLab CI，构建缓存命中率一直上不去。", "gap": 3, "probe": "我们的 CI 工具是什么？", "expected": ["GitLab"], "traps": [["Jenkins"]]}
+{"fact_id": "mh-36", "fact_turn": "我本地调试习惯用 delve 打断点，print 日志是下策。", "gap": 5, "probe": "我本地调试习惯用什么工具？", "expected": ["delve"], "traps": [["gdb"]]}
+{"fact_id": "mh-37", "fact_turn": "我们的服务网格换成了 Istio，之前是自研 sidecar。", "gap": 4, "probe": "我们的服务网格现在用的是什么？", "expected": ["Istio"], "traps": [["Envoy", "自研"]]}
+{"fact_id": "mh-38", "fact_turn": "文档我们全组统一用飞书写，评审走 Confluence。", "gap": 6, "probe": "我们组日常文档和评审各用什么工具？", "expected": ["飞书", "Confluence"], "traps": [["Notion"]]}
+{"fact_id": "mh-39", "fact_turn": "我的 shell 是 fish，配置文件都同步在 dotfiles 仓库里。", "gap": 3, "probe": "我用的是什么 shell？", "expected": ["fish"], "traps": [["zsh"]]}
+{"fact_id": "mh-40", "fact_turn": "压测工具我们定的是 wrk2，JMeter 太重了不用。", "gap": 5, "probe": "我们定的是哪个压测工具？", "expected": ["wrk2"], "traps": [["JMeter"]]}
+{"fact_id": "mh-41", "fact_turn": "我负责的核心模块是结算引擎，双 eleven 大促就是它扛的流量。", "gap": 4, "probe": "我负责的核心模块是什么？", "expected": ["结算引擎"], "traps": [["购物车"]]}
+{"fact_id": "mh-42", "fact_turn": "去年双十一我们的结算峰值 QPC 到了十二万。", "gap": 6, "probe": "去年大促结算峰值到了多少？", "expected": ["十二万"], "traps": [["三万"]]}
+{"fact_id": "mh-43", "fact_turn": "我们重构把结算耗时 P99 从八百毫秒降到了一百二十毫秒。", "gap": 3, "probe": "重构后结算耗时 P99 降到了多少？", "expected": ["一百二十"], "traps": [["五百"]]}
+{"fact_id": "mh-44", "fact_turn": "这个项目我从零做到上线，团队一共七个人，我是后端负责人。", "gap": 5, "probe": "那个项目团队多少人？我是什么角色？", "expected": ["七", "后端负责人"], "traps": [["十二"]]}
+{"fact_id": "mh-45", "fact_turn": "灰度方案是我们分三批放量，每批观察二十四小时。", "gap": 4, "probe": "我们的灰度分几批？每批观察多久？", "expected": ["三批", "二十四小时"], "traps": [["五批"]]}
+{"fact_id": "mh-46", "fact_turn": "事故复盘我主导过一次，是缓存雪崩导致的下单失败。", "gap": 6, "probe": "我主导复盘的那次事故是什么原因？", "expected": ["缓存雪崩"], "traps": [["数据库宕机"]]}
+{"fact_id": "mh-47", "fact_turn": "我们的对账系统每天跑两轮，凌晨一点和早上六点。", "gap": 3, "probe": "对账系统每天几点跑？", "expected": ["一点", "六点"], "traps": [["十二点"]]}
+{"fact_id": "mh-48", "fact_turn": "我写的那个分库分表中间件内部叫 sharding-kit，接了四个业务线。", "gap": 5, "probe": "我们的分库分表中间件叫什么？接了几条业务线？", "expected": ["sharding-kit", "四个"], "traps": [["三个"]]}
+{"fact_id": "mh-49", "fact_turn": "性能优化那个季度我们把机器从六十四台砍到了三十九台。", "gap": 4, "probe": "性能优化后机器数量从多少砍到多少？", "expected": ["六十四", "三十九"], "traps": [["八十"]]}
+{"fact_id": "mh-50", "fact_turn": "我带的实习生小刘转正答辩通过了，下个月正式入职。", "gap": 6, "probe": "我带的实习生叫什么？转正结果怎么样？", "expected": ["小刘", "通过"], "traps": [["小陈"]]}
+{"fact_id": "mh-51", "fact_turn": "我下周二上午十点约了猎头电话，猎头姓刘。", "gap": 3, "probe": "我和猎头的电话约在什么时候？猎头姓什么？", "expected": ["周二", "十点", "刘"], "traps": [["周三"]]}
+{"fact_id": "mh-52", "fact_turn": "我请了年假，下个月一号到五号，打算专心改简历。", "gap": 5, "probe": "我的年假是哪几天？打算做什么？", "expected": ["一号", "五号", "简历"], "traps": [["十一"]]}
+{"fact_id": "mh-53", "fact_turn": "面试我一般约在晚上八点以后，白天要上班不方便。", "gap": 4, "probe": "我习惯把面试约在什么时间？", "expected": ["晚上八点"], "traps": [["中午"]]}
+{"fact_id": "mh-54", "fact_turn": "我周六要参加一个技术沙龙，主题是向量数据库。", "gap": 6, "probe": "我周六参加的活动是什么主题？", "expected": ["向量数据库"], "traps": [["大模型"]]}
+{"fact_id": "mh-55", "fact_turn": "我每天早上六点半起床，通勤路上听技术播客。", "gap": 3, "probe": "我每天几点起床？通勤做什么？", "expected": ["六点半", "播客"], "traps": [["七点"]]}
+{"fact_id": "mh-56", "fact_turn": "我给孩子报了周日9点的游泳课，周日早上不能安排事情。", "gap": 5, "probe": "周日早上我有什么固定安排？", "expected": ["游泳"], "traps": [["钢琴"]]}
+{"fact_id": "mh-57", "fact_turn": "我答应当面试官下周五之前补交一个系统设计文档。", "gap": 4, "probe": "我答应什么时候交系统设计文档？", "expected": ["下周五"], "traps": [["下周三"]]}
+{"fact_id": "mh-58", "fact_turn": "我的体检约在下周四下午，别安排面试。", "gap": 6, "probe": "我的体检是什么时候？", "expected": ["周四", "下午"], "traps": [["周二"]]}
+{"fact_id": "mh-59", "fact_turn": "月底我要出差去成都支援分部，大概一周。", "gap": 3, "probe": "我月底要去哪里出差？多久？", "expected": ["成都", "一周"], "traps": [["武汉"]]}
+{"fact_id": "mh-60", "fact_turn": "我跟现领导提了离职意向，他说服我做到季度末。", "gap": 5, "probe": "我和领导谈离职的结果是什么？", "expected": ["季度末"], "traps": [["月底"]]}
+{"fact_id": "mh-61", "fact_turn": "看技术内容我偏好文字博客，视频教程看不进去。", "gap": 4, "probe": "我偏好什么形式的技术内容？", "expected": ["博客"], "traps": [["视频"]]}
+{"fact_id": "mh-62", "fact_turn": "我喝咖啡不加糖，会议室常备的美式正好。", "gap": 3, "probe": "我喝咖啡的口味偏好是什么？", "expected": ["不加糖", "美式"], "traps": [["拿铁"]]}
+{"fact_id": "mh-63", "fact_turn": "我沟通风格偏直接，问题最好开门见山别绕弯子。", "gap": 6, "probe": "我的沟通风格是什么样的？", "expected": ["直接", "开门见山"], "traps": [["委婉"]]}
+{"fact_id": "mh-64", "fact_turn": "我记东西习惯用Obsidian，双链笔记整理面试素材。", "gap": 5, "probe": "我用什么笔记工具整理面试素材？", "expected": ["Obsidian"], "traps": [["Notion"]]}
+{"fact_id": "mh-65", "fact_turn": "我腰不好，工位要升降桌，长时间坐着不行。", "gap": 3, "probe": "我工位有什么特殊要求？为什么？", "expected": ["升降桌", "腰"], "traps": [["双显示器"]]}
+{"fact_id": "mh-66", "fact_turn": "我复习算法偏好按专题刷，最近在攻克动态规划专题。", "gap": 4, "probe": "我最近的算法专题是什么？", "expected": ["动态规划"], "traps": [["图论"]]}
+{"fact_id": "mh-67", "fact_turn": "学新框架我一定先读官方文档再动手，教程视频当补充。", "gap": 6, "probe": "我学新框架的习惯是什么？", "expected": ["官方文档"], "traps": [["视频教程"]]}
+{"fact_id": "mh-68", "fact_turn": "我加班后习惯写半小时日报复盘，这个习惯保持两年了。", "gap": 5, "probe": "我下班后有什么复盘习惯？坚持多久了？", "expected": ["日报", "两年"], "traps": [["一年"]]}
+{"fact_id": "mh-69", "fact_turn": "面试自我介绍我习惯控制在九十秒以内，超过就慌。", "gap": 3, "probe": "我的自我介绍习惯控制在多长时间？", "expected": ["九十秒"], "traps": [["三分钟"]]}
+{"fact_id": "mh-70", "fact_turn": "我不考虑外包公司和驻场岗位，筛选时直接排除。", "gap": 4, "probe": "我对公司类型有什么排除项？", "expected": ["外包", "驻场"], "traps": [["创业公司"]]}
+{"fact_id": "mh-71", "fact_turn": "我的目标城市就两个：上海或者苏州，别的都不去。", "gap": 6, "probe": "我的目标城市有哪几个？", "expected": ["上海", "苏州"], "traps": [["南京"]]}
+{"fact_id": "mh-72", "fact_turn": "薪资期望涨幅至少百分之三十，平薪不考虑。", "gap": 3, "probe": "我的薪资涨幅期望是多少？", "expected": ["百分之三十"], "traps": [["百分之十"]]}
+{"fact_id": "mh-73", "fact_turn": "我最想去的公司是 PingCAP，第二志愿是涛思。", "gap": 5, "probe": "我的第一和第二志愿公司分别是什么？", "expected": ["PingCAP", "涛思"], "traps": [["阿里"]]}
+{"fact_id": "mh-74", "fact_turn": "我求职优先级第一是技术成长，第二才是薪资。", "gap": 4, "probe": "我求职的优先级排序是怎样的？", "expected": ["技术成长", "薪资"], "traps": [["稳定"]]}
+{"fact_id": "mh-75", "fact_turn": "远程办公对我来说是加分项，混合办公也可以接受。", "gap": 6, "probe": "我对办公模式的态度是什么？", "expected": ["远程", "混合"], "traps": [["必须坐班"]]}
+{"fact_id": "mh-76", "fact_turn": "我投递记录里已经面过五家了，三挂一待定一个流程中。", "gap": 3, "probe": "我目前面试进展的整体情况如何？", "expected": ["五家", "三挂"], "traps": [["八家"]]}
+{"fact_id": "mh-77", "fact_turn": "我的离职交接期是一个月，入职新公司最早也要下下月。", "gap": 5, "probe": "我的交接期多长？最早什么时候能入职？", "expected": ["一个月", "下下月"], "traps": [["两周"]]}
+{"fact_id": "mh-78", "fact_turn": "猎头那边我唯一在流程里的是猎聘上的一家上海公司。", "gap": 4, "probe": "我在哪个平台有在流程的机会？", "expected": ["猎聘", "上海"], "traps": [["BOSS"]]}
+{"fact_id": "mh-79", "fact_turn": "我的年终奖一般四月发，跳槽时间要卡在发奖之后。", "gap": 6, "probe": "我的年终奖什么时候发？对跳槽时间有什么影响？", "expected": ["四月", "发奖之后"], "traps": [["十二月"]]}
+{"fact_id": "mh-80", "fact_turn": "我媳妇支持我跳槽，但要求别去加班特别凶的公司。", "gap": 3, "probe": "家人对我跳槽的态度是什么？", "expected": ["支持", "加班"], "traps": [["反对"]]}
+{"fact_id": "mh-81", "fact_turn": "我报了极客时间的 Kafka 专栏，学到第五章了。", "gap": 4, "probe": "我报的 Kafka 课程学到第几章了？", "expected": ["第五章"], "traps": [["第三章"]]}
+{"fact_id": "mh-82", "fact_turn": "我的学习计划是三个月吃透分布式一致性， raft 论文精读两遍。", "gap": 6, "probe": "我的学习主题和计划时长是什么？", "expected": ["三个月", "一致性", "raft"], "traps": [["一个月"]]}
+{"fact_id": "mh-83", "fact_turn": "我每天通勤地铁上背二十个八股词条，用的是 Anki 卡片。", "gap": 3, "probe": "我通勤时怎么背八股？用什么工具？", "expected": ["二十", "Anki"], "traps": [["五十"]]}
+{"fact_id": "mh-84", "fact_turn": "MIT 6.824 的 lab 我做完了前三个，第四个卡在 Raft 选举上。", "gap": 5, "probe": "我的 6.824 lab 做到哪了？卡在哪里？", "expected": ["前三个", "Raft", "选举"], "traps": [["全部完成"]]}
+{"fact_id": "mh-85", "fact_turn": "我打算用 Rust 重写一遍我的日志库来练手。", "gap": 4, "probe": "我打算用什么语言重写日志库练手？", "expected": ["Rust"], "traps": [["Zig"]]}
+{"fact_id": "mh-86", "fact_turn": "深度学习我只到能看懂论文的程度，数学早还给老师了。", "gap": 6, "probe": "我的深度学习水平自评如何？", "expected": ["看懂论文"], "traps": [["精通"]]}
+{"fact_id": "mh-87", "fact_turn": "我的论文精读清单是 Bigtable、Spanner 和 F1 这三篇。", "gap": 3, "probe": "我的论文精读清单有哪几篇？", "expected": ["Bigtable", "Spanner", "F1"], "traps": [["MapReduce"]]}
+{"fact_id": "mh-88", "fact_turn": "英语技术文档我每天读一篇，坚持打卡一百二十天了。", "gap": 5, "probe": "我英语文档阅读打卡多少天了？", "expected": ["一百二十"], "traps": [["三十"]]}
+{"fact_id": "mh-89", "fact_turn": "八股我整理了二百多道题的题库，放在 GitHub 私有仓库。", "gap": 4, "probe": "我的八股题库有多少道题？放在哪里？", "expected": ["二百", "GitHub"], "traps": [["五百"]]}
+{"fact_id": "mh-90", "fact_turn": "我报名了下个月的软考架构师，周末要上课。", "gap": 6, "probe": "我报名了什么考试？什么时候？", "expected": ["软考", "架构师", "下个月"], "traps": [["PMP"]]}
+{"fact_id": "mh-91", "fact_turn": "我的副业是给一家在线教育公司做技术顾问，每月两天。", "gap": 3, "probe": "我的副业是什么形式？每月投入几天？", "expected": ["顾问", "两天"], "traps": [["外包"]]}
+{"fact_id": "mh-92", "fact_turn": "我名下有套房在还贷，月供八千三，跳槽薪资要覆盖这个。", "gap": 5, "probe": "我的月供是多少？对求职有什么约束？", "expected": ["八千三", "覆盖"], "traps": [["五千"]]}
+{"fact_id": "mh-93", "fact_turn": "我 handed notice 的赔偿条款是 N 加一，合同里写清楚了。", "gap": 4, "probe": "我的离职赔偿条款是什么标准？", "expected": ["N", "一"], "traps": [["N 加二"]]}
+{"fact_id": "mh-94", "fact_turn": "我的职业规划是五年内做到架构师，十年带团队。", "gap": 6, "probe": "我的长期职业规划是怎样的？", "expected": ["五年", "架构师", "十年", "团队"], "traps": [["三年"]]}
+{"fact_id": "mh-95", "fact_turn": "我的技术输出平台是掘金，发过十一篇专栏文章。", "gap": 3, "probe": "我在哪个平台写技术文章？发了多少篇？", "expected": ["掘金", "十一篇"], "traps": [["知乎"]]}
+{"fact_id": "mh-96", "fact_turn": "我有轻微的花粉过敏，春天面试尽量约室内。", "gap": 5, "probe": "我有什么健康情况需要注意？", "expected": ["花粉"], "traps": [["鼻炎"]]}
+{"fact_id": "mh-97", "fact_turn": "我驾照是 C1，六年驾龄，自驾通勤没问题。", "gap": 4, "probe": "我的驾照类型和驾龄是什么？", "expected": ["C1", "六年"], "traps": [["C2"]]}
+{"fact_id": "mh-98", "fact_turn": "我的紧急联系人写的是我父亲，电话尾号 6672。", "gap": 6, "probe": "我的紧急联系人是谁？电话尾号多少？", "expected": ["父亲", "6672"], "traps": [["母亲"]]}
+{"fact_id": "mh-99", "fact_turn": "入职材料里我的体检报告用的是上月的那份，还剩半年有效期。", "gap": 3, "probe": "我的体检报告是什么时候的？有效期多久？", "expected": ["上月", "半年"], "traps": [["去年"]]}
+{"fact_id": "mh-100", "fact_turn": "我最后确认一下：社保公积金断缴不能超过一个月，跳槽衔接要注意。", "gap": 5, "probe": "我的社保公积金有什么约束？", "expected": ["断缴", "一个月"], "traps": [["两个月"]]}

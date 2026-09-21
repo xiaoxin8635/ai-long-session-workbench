@@ -1,0 +1,35 @@
+{
+  "meta": {
+    "label": "fix_v11_tc",
+    "generated_at": "2026-09-21T02:50:22.722423+00:00",
+    "samples": {
+      "task_continuity": 20
+    },
+    "errors": {
+      "task_continuity": []
+    },
+    "judge_effective": {
+      "context_precision": 0,
+      "hallucination": 0
+    },
+    "token_note": "actual_avg=2299 baseline_avg≈17（全量历史字符上界近似；绝对值仅供参考，以 A/B 相对变化为主）"
+  },
+  "metrics": {
+    "memory_recall_at_5": 0.0,
+    "memory_precision": 0.0,
+    "context_precision": 0.0,
+    "long_turn_consistency": 0.0,
+    "fact_conflict_rate": 0.0,
+    "hallucination_rate": 0.0,
+    "token_savings": -133.06122448979593,
+    "p95_ttfb_ms": 0.0,
+    "p95_e2e_ms": 0.0,
+    "task_continuity": 1.0
+  },
+  "auxiliary": {
+    "conflict_answer_accuracy": null,
+    "long_turn_assert": null,
+    "task_assert": "20/20",
+    "suite_rows": {}
+  }
+}

@@ -9,6 +9,8 @@ extract→打分过滤→批量向量化→逐条去重→冲突仲裁→入库�
   - SUPERSEDE：新条目入库挂 supersedes_id，旧条目置 superseded（版本链）
   - COEXIST：新条目入库后双条置 conflicted，等待用户在记忆面板裁决
     （含疑似冲突层命中时 MERGE 的降级出口，Fix A）
+  - INDEPENDENT：新条目正常入库，双方保持 ACTIVE 各自可检索（不打冲突标；
+    同主题不矛盾并行事实的正确出口，治理 conflicted 误标畸高）
 
 事务与并发（Fix D，M-13 实测死锁修复）：
   - 候选逐条独立提交，锁持有窗口缩至单条毫秒级，避免与并发
@@ -291,9 +293,10 @@ class ExtractPipeline:
         )
         if outcome.action == ConflictAction.SUPERSEDE:
             await memory_repo.mark_superseded(db, old, by_id=new_memory.id)
-        else:  # COEXIST：双条 conflicted 待用户裁决
+        elif outcome.action == ConflictAction.COEXIST:  # 双条 conflicted 待用户裁决
             await memory_repo.mark_conflicted(db, old)
             await memory_repo.mark_conflicted(db, new_memory)
+        # INDEPENDENT：双方保持 ACTIVE，各自独立可检索，无需任何标记
         return new_memory
 
 

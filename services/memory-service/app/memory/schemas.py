@@ -75,6 +75,9 @@ class ConflictAction(StrEnum):
     MERGE = "merge"  # 语义一致：合并进旧条目并提升 confidence
     SUPERSEDE = "supersede"  # 新事实成立：旧条目 superseded，新条目挂版本链
     COEXIST = "coexist"  # 无法判定：双条置 conflicted 待用户裁决
+    INDEPENDENT = "independent"  # 不矛盾的独立事实：双条各自 ACTIVE 并存
+    # （fix_v8_lt 实证：同主题并行事实如"每晚复习两小时"与"每天刷两道
+    # 算法题"被逼进 COEXIST 导致 conflicted 畸高、检索被降权——补此出口）
 
 
 @dataclass(frozen=True)

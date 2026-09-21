@@ -85,23 +85,30 @@ def parse_injected_memories(messages: list[dict[str, str]]) -> list[InjectedItem
 
 
 def _hit_in_top(injected: list[InjectedItem], keywords: list[str], k: int = 5) -> bool:
-    """判定一组期望关键词是否被注入条目 top-k 中任一条目全量覆盖。
+    """判定期望关键词是否被注入的 semantic 记忆 top-k 中任一条目全量覆盖。
+
+    判定窗口只取 semantic 区块条目（fix_v9_mh 取证实锤：装配渲染顺序
+    procedural 先于 semantic，跨场景全局条目混在渲染序列前排，按渲染
+    顺序切前 k 会把窗口占满——目标事实 sim 实测全部第 1 却排第 6-8 位，
+    6/20 假 FAIL）。期望事实均为 semantic 记忆，recall@5 应度量其在
+    semantic 桶（桶内保持检索 score 排序）前 k 席的命中。
 
     Args:
-        injected: 注入条目（顺序即渲染顺序）。
+        injected: 注入条目（顺序即装配渲染顺序，semantic 桶内保持检索排序）。
         keywords: 期望关键词组（须同时出现在同一条目中，避免跨条目拼凑误判）。
-        k: 取前 k 条参与判定（Recall@k 口径）。
+        k: semantic 条目中取前 k 条参与判定（Recall@k 口径）。
 
     Returns:
         命中 True；k 条内无全量覆盖 False。
     """
-    return any(all(kw in item.content for kw in keywords) for item in injected[:k])
+    scoped = [item for item in injected if item.type == "semantic"]
+    return any(all(kw in item.content for kw in keywords) for item in scoped[:k])
 
 
 def recall_at_5(
     probes: list[tuple[list[InjectedItem], list[str]]],
 ) -> float:
-    """Memory Recall@5：期望关键词组命中注入记忆 top-5 的比例。
+    """Memory Recall@5：期望关键词组命中注入 semantic 记忆 top-5 的比例。
 
     Args:
         probes: 每次探针的 (注入条目列表, 期望关键词组) 元组列表。

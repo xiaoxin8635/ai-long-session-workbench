@@ -2,7 +2,7 @@
 
 两套 prompt：
   - 抽取：对话轮次 → JSON 结构化事实列表（key/content/type/confidence/importance/ttl）
-  - 仲裁：旧记忆 + 新候选 → MERGE / SUPERSEDE / COEXIST 结论
+  - 仲裁：旧记忆 + 新候选 → MERGE / SUPERSEDE / COEXIST / INDEPENDENT 结论
 """
 
 # 抽取系统提示词：{examples} 为 key 命名示例（约束 LLM 产出结构化 key）
@@ -17,6 +17,10 @@ EXTRACT_SYSTEM = """\
   属于长期习惯与偏好，必须抽取为 procedural——用户后续安排计划时依赖这些约束
 - 不要抽取：寒暄、临时性提问、AI 的回答内容、单次性的闲聊细节、
   语义与常识无差别的信息
+- 问句/请求句不是事实（fix_v11_mh 实锤）：用户在"提问"或"请求查找"且
+  本轮消息中不含答案时，禁止输出任何事实——尤其禁止推断出"用户未提供 X /
+  用户没有 X"之类的否定性事实（那只是提问这个行为，不是用户属性）。
+  只有当用户在陈述句中给出答案时才抽取该答案本身
 
 输出 JSON 结构：
 {{"facts": [
@@ -27,7 +31,9 @@ EXTRACT_SYSTEM = """\
 ]}}
 
 字段要求：
-- key：小写英文点分层级，如 {examples}；同主题不同侧面用不同 key
+- key：小写英文点分层级，如 {examples}；同主题不同侧面用不同 key；
+  两条互不矛盾的不同事实禁止共用同一个 key（宁可新造 key，不要挤进
+  既有 key——同一 key 只留给"同一件事的状态更新"）
 - memory_type：semantic=事实/背景，procedural=偏好/流程
 - confidence：该事实确实值得长期记住的置信度
 - importance：对用户的重要程度（求职进度 > 日常偏好）
@@ -46,14 +52,22 @@ ARBITRATE_SYSTEM = """\
 你是记忆冲突仲裁器。给定"旧记忆"与"新事实"，判断两者关系并输出结论。
 
 输出 JSON 结构（不要 markdown 代码块，不要任何说明文字）：
-{{"action": "merge 或 supersede 或 coexist",
+{{"action": "merge 或 supersede 或 coexist 或 independent",
   "merged_content": "仅 merge 时填写：合并双方信息后的完整陈述",
   "merged_confidence": "仅 merge 时填写：0.0~1.0，应不低于两者原值"}}
 
 判定规则：
 - merge：两者语义一致或新事实只是旧记忆的补充/细化 → 合并为一条
 - supersede：两者矛盾且新事实更可信（更新、更明确）→ 新事实替代旧记忆
-- coexist：两者矛盾但无法判定谁更可信（如用户自相矛盾且无上下文）→ 并存待裁决
+- coexist：两者矛盾且无法判定谁更可信（如用户自相矛盾且无上下文）→ 并存待裁决
+- independent：两者是同主题下**互不矛盾的不同事实**（并行约定/不同侧面，
+  可以同时成立）→ 各自独立保存，互不干扰
+
+重要：independent 与 coexist 的区别是是否矛盾。两者不矛盾、可以同时成立时
+必须选 independent，禁止选 coexist——coexist 只留给真正的矛盾冲突。
+例：旧记忆"用户每天晚上复习两小时"，新事实"用户每天刷两道算法题"——
+两者可并行，选 independent；旧记忆"用户住在杭州"，新事实"用户搬到深圳了"
+——矛盾，按可信度选 supersede 或 coexist。
 
 用户消息中若有对矛盾的澄清说明，以其为准。"""
 

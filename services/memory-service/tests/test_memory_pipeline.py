@@ -301,6 +301,79 @@ async def test_conflict_coexist_marks_both_conflicted() -> None:
         await db.close()
 
 
+async def test_conflict_independent_keeps_both_active() -> None:
+    """用例 3b：同主题不矛盾的并行事实 → INDEPENDENT 双条 ACTIVE 并存、不打冲突标。"""
+    db, ws_id, user_id, sid = await _prepare()
+    try:
+        llm = FakeJsonLLM(
+            [
+                _fact_json("schedule.availability", "用户每天晚上复习两小时"),  # 抽取
+                '{"action": "independent"}',  # 仲裁
+            ]
+        )
+        embedding = FakeEmbedding()
+        old = await memory_repo.create_memory(
+            db,
+            ws_id=ws_id,
+            user_id=user_id,
+            memory_type=MemoryType.PROCEDURAL,
+            key="schedule.availability",
+            content="用户每天刷两道算法题",
+            confidence=0.8,
+            importance=0.6,
+            embedding=_basis(2),
+        )
+        await db.commit()
+
+        written = await _pipeline(llm, embedding).run(
+            db,
+            ws_id=ws_id,
+            user_id=user_id,
+            session_id=sid,
+            messages=_round_messages("我每天晚上都会复习两个小时"),
+        )
+        assert len(written) == 1
+        new = written[0]
+        assert new.status == MemoryStatus.ACTIVE
+        assert new.supersedes_id is None
+        assert old.status == MemoryStatus.ACTIVE
+        # 双方都不产生 CONFLICT/SUPERSEDED 事件（各自仅有预置/本次的 CREATED）
+        assert [e.event_type for e in await _events_of(db, new.id)] == [MemoryEventType.CREATED]
+        assert [e.event_type for e in await _events_of(db, old.id)] == [MemoryEventType.CREATED]
+    finally:
+        await db.close()
+
+
+def test_arbitrate_prompt_documents_independent() -> None:
+    """仲裁 prompt 必须文档化 independent 动作及其与 coexist 的边界（防 prompt 回退）。"""
+    from app.memory.prompts import ARBITRATE_SYSTEM
+
+    assert "independent" in ARBITRATE_SYSTEM
+    assert "互不矛盾" in ARBITRATE_SYSTEM
+    # 抽取 prompt 必须约束"互不矛盾的事实禁止共用 key"
+    from app.memory.prompts import EXTRACT_SYSTEM
+
+    assert "禁止共用同一个 key" in EXTRACT_SYSTEM
+    # fix_v11_mh 回归：问句脑补"用户未提供 X"污染既有 key（28 对 conflicted
+    # 的根因）——抽取 prompt 必须显式禁止从问句推断否定性事实
+    assert "禁止推断" in EXTRACT_SYSTEM and "否定性事实" in EXTRACT_SYSTEM
+
+
+def test_retriever_weights_hit_matthew_clamp() -> None:
+    """fix_v10_mh 回归：hit 权重必须受 sim 钳制，防累积量碾压每查询量。
+
+    fix_v10_mh（100 行全量首跑）实锤：hit≥20 即饱和满分的旧设计下，
+    700 次检索让头部"万金油"条目 hit 200~500 恒拿 0.15，sim 0.74 的
+    目标条目（hit=0）以 0.006 分差被挤出 top8，recall 崩至 0.22。
+    约束：hit 满分差（_W_HIT）必须小于典型 sim 差（≥0.15）的加权和，
+    使"高 sim 冷条目"能稳定翻越"低 sim 高频条目"。
+    """
+    from app.memory import retriever as _retriever
+
+    assert _retriever._W_HIT < _retriever._W_SIMILARITY
+    assert _retriever._W_HIT < 0.15 * _retriever._W_SIMILARITY
+
+
 async def test_expired_memory_not_retrieved() -> None:
     """用例 4：TTL 过期记忆不被检索返回（软过期过滤）。"""
     db, ws_id, user_id, sid = await _prepare()

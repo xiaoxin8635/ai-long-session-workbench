@@ -9,7 +9,9 @@
 
 两项指标：
   - Context Precision：注入上下文对回答"有贡献"的条目占比（judge 逐探针判定）
-  - Hallucination Rate：回答中无依据关键论断的比例（judge 抽查判定）
+  - Hallucination Rate：回答中无依据关键论断的比例（judge 抽查判定；
+    注入记忆必须作为依据来源传入 judge——带记忆的正确回答缺此输入会被
+    系统性误判为幻觉，fix_v9_mh 20/20 误判已实锤并修复）
 """
 
 import json
@@ -99,6 +101,9 @@ _HALLUCINATION_PROMPT = """你是一个严格的事实性评审员。判断下�
 【用户问题】
 {question}
 
+【注入的记忆】（回答中事实性内容的依据来源，逐条列出；可能为空）
+{memory_list}
+
 【助手回答】
 {answer}
 
@@ -107,18 +112,29 @@ _HALLUCINATION_PROMPT = """你是一个严格的事实性评审员。判断下�
 """
 
 
-async def judge_hallucination(ctx: JudgeContext, question: str, answer: str) -> dict:
+async def judge_hallucination(
+    ctx: JudgeContext, question: str, answer: str, memories: list[str] | None = None
+) -> dict:
     """判定回答的无依据论断情况（Hallucination 原始输出）。
 
     Args:
         ctx: 服务端上下文。
         question: 探针问题。
         answer: 助手回答。
+        memories: 本次注入的记忆条目文本，是回答事实性内容的依据来源；
+            为 None/空时 rubric 仅靠问题与常识判断（仅适用于确实无注入的
+            无状态场景）。不带注入的 chat 回答必须传此参数，否则回答中
+            复述记忆事实会被系统性误判为幻觉（fix_v9_mh 20/20 误判实锤）。
 
     Returns:
         {"ok": bool, "has_unsupported": bool, "error": str|None}。
     """
-    prompt = _HALLUCINATION_PROMPT.format(question=question, answer=answer)
+    memory_list = (
+        "\n".join(f"{i}. {m}" for i, m in enumerate(memories, start=1))
+        if memories
+        else "（无注入记忆）"
+    )
+    prompt = _HALLUCINATION_PROMPT.format(question=question, memory_list=memory_list, answer=answer)
     raw = await _ask_llm(ctx, prompt)
     if raw is None:
         return {"ok": False, "has_unsupported": False, "error": "llm_unavailable"}

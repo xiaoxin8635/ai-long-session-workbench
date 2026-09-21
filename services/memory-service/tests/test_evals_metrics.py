@@ -84,6 +84,40 @@ def test_recall_at_5_empty():
     assert metrics.recall_at_5([]) == 0.0
 
 
+def test_recall_at_5_procedural_front_does_not_displace_semantic():
+    """fix_v9_mh 回归：procedural 全局条目霸占渲染前 5 不挤占判定窗口。
+
+    取证实锤：装配渲染 procedural 先于 semantic，目标 semantic 条目
+    （检索 sim 第 1）被挤到渲染第 6-8 位——按渲染顺序切 [:5] 判 6/20
+    假 FAIL。判定窗口只取 semantic 条目后此类场景应命中。
+    """
+    probes = [
+        (
+            [_item(f"全局日程{i}") for i in range(4)]
+            + [metrics.InjectedItem(type="procedural", source="extract", content="每周四面试")]
+            + [_item("GitHub 用户名 cm-hust")],
+            ["cm-hust"],
+        )
+    ]
+    assert metrics.recall_at_5(probes) == 1.0
+
+
+def test_recall_at_5_semantic_beyond_top5_still_miss():
+    """semantic 条目自身排在 semantic 桶第 6 位仍不计命中（口径不放宽）。"""
+    probes = [
+        (
+            [
+                metrics.InjectedItem(type="procedural", source="extract", content=f"偏好{i}")
+                for i in range(5)
+            ]
+            + [_item(f"无关事实{i}") for i in range(5)]
+            + [_item("目标岗位 后端")],
+            ["后端"],
+        )
+    ]
+    assert metrics.recall_at_5(probes) == 0.0
+
+
 # ---- metrics.memory_precision / conflict_rate / consistency ----
 
 
@@ -193,6 +227,44 @@ def test_judge_hallucination_llm_unavailable_degrades():
     result = asyncio.run(judges.judge_hallucination(ctx, "问题", "回答"))
     assert result["ok"] is False
     assert result["error"] == "llm_unavailable"
+
+
+def test_judge_hallucination_prompt_includes_memories(monkeypatch):
+    """传入注入记忆时 prompt 必须包含记忆文本（judge 缺依据来源会系统性误判幻觉）。"""
+    captured: dict[str, str] = {}
+
+    async def fake_ask(ctx: judges.JudgeContext, prompt: str) -> str:
+        """替换 _ask_llm：捕获 prompt 并返回固定合法 JSON。"""
+        captured["prompt"] = prompt
+        return '{"unsupported_claims": [], "has_unsupported": false}'
+
+    monkeypatch.setattr(judges, "_ask_llm", fake_ask)
+    ctx = judges.JudgeContext(base_url="http://127.0.0.1:1", token="t", workspace_id="w")
+    result = asyncio.run(
+        judges.judge_hallucination(
+            ctx,
+            "我的手机号是多少？",
+            "你的手机号是 13812345678。",
+            ["用户的手机号是 13812345678"],
+        )
+    )
+    assert result == {"ok": True, "has_unsupported": False, "claims": [], "error": None}
+    assert "13812345678" in captured["prompt"]
+
+
+def test_judge_hallucination_prompt_without_memories_placeholder(monkeypatch):
+    """memories 为 None 时 prompt 用占位文案标明无注入（不误暗示评审员找依据）。"""
+    captured: dict[str, str] = {}
+
+    async def fake_ask(ctx: judges.JudgeContext, prompt: str) -> str:
+        """替换 _ask_llm：捕获 prompt 并返回固定合法 JSON。"""
+        captured["prompt"] = prompt
+        return '{"unsupported_claims": [], "has_unsupported": false}'
+
+    monkeypatch.setattr(judges, "_ask_llm", fake_ask)
+    ctx = judges.JudgeContext(base_url="http://127.0.0.1:1", token="t", workspace_id="w")
+    asyncio.run(judges.judge_hallucination(ctx, "问题", "回答"))
+    assert "（无注入记忆）" in captured["prompt"]
 
 
 # ---- run_eval：数据集格式与确定性 ----

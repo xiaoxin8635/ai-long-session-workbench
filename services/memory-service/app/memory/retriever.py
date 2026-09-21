@@ -1,7 +1,7 @@
 """记忆检索（M-04 读路径，docs/01 §5.2.3）。
 
 流程：query 向量化 → 向量召回（active + conflicted/未过期/归属过滤）→ 加权重排
-（sim*0.5 + importance*0.2 + recency*0.15 + hit*0.15，CONFLICTED 条目乘惩罚系数）
+（sim*0.6 + importance*0.2 + recency*0.15 + hit*0.05，CONFLICTED 条目乘惩罚系数）
 → 同 key 去重 → top-k → 命中写回 hit_count 与 HIT 事件。
 
 CONFLICTED（待用户裁决）条目参与检索但降权：完全排除会使待裁决期间的信息
@@ -28,10 +28,16 @@ from app.repositories import memory_repo
 logger = logging.getLogger(__name__)
 
 # 加权重排的权重（docs/06 §M-04 检索接口约定）
-_W_SIMILARITY = 0.5
+# hit 权重 0.15→0.05、sim 0.5→0.6（评测优化轮三期，fix_v10_mh 100 行全量实锤）：
+# hit_count 是跨查询累积量，20 次即饱和满分的绝对归一让高频"万金油"条目
+# 恒拿 0.15、与冷条目（hit=0）拉开 0.15 的不可翻越分差——700 次检索后
+# 头部条目 hit 200~500 恒满分，sim 0.74 的目标条目以 0.006 分差出局，
+# recall 崩至 0.22。sim 是每查询的主信号（权重升 0.6），hit 降为弱使用
+# 反馈（满分差 0.05，sim 差可稳定翻越；同 sim 下高频条目仍优先）。
+_W_SIMILARITY = 0.6
 _W_IMPORTANCE = 0.2
 _W_RECENCY = 0.15
-_W_HIT = 0.15
+_W_HIT = 0.05
 # recency 衰减：updated_at 距今 N 天的线性衰减半周期（天）
 _RECENCY_HALF_LIFE_DAYS = 30.0
 # hit_count 归一化的饱和常数（约 20 次命中视为满分）

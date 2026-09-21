@@ -2,3 +2,20 @@
 {"task_id": "tc-02", "scenario": "转岗学习任务跨会话延续", "task_title": "三个月 AI 应用转岗计划：搭最小 RAG demo 并部署上云", "priority": 0, "session_b_probe": "接着我上次的任务说，我进行到哪了、接下来做什么？", "assert_contains": [["RAG"], ["部署"]]}
 {"task_id": "tc-03", "scenario": "刷题打卡任务跨会话延续", "task_title": "每日算法刷题打卡：数组专题完成后进入链表专题并整理错题", "priority": 0, "session_b_probe": "我的打卡任务还剩什么没做？", "assert_contains": [["链表"], ["错题"]]}
 {"task_id": "tc-04", "scenario": "简历修改任务跨会话延续", "task_title": "简历针对架构岗重写：突出架构决策并找学长内推终审", "priority": 0, "session_b_probe": "我之前说好的简历修改任务，现在进行到哪一步了？", "assert_contains": [["架构"], ["内推"]]}
+{"task_id": "tc-05", "scenario": "软考备考任务跨会话延续", "task_title": "软考架构师备考冲刺：过完历年真题并整理错题本", "priority": 1, "session_b_probe": "我软考备考这个任务还剩什么没完成？", "assert_contains": [["真题"], ["错题"]]}
+{"task_id": "tc-06", "scenario": "练手项目任务跨会话延续", "task_title": "用 Rust 重写日志库练手：先实现异步写入再补基准测试", "priority": 0, "session_b_probe": "我那个练手项目进行到哪了？", "assert_contains": [["Rust"], ["日志库"]]}
+{"task_id": "tc-07", "scenario": "题库整理任务跨会话延续", "task_title": "八股题库二轮整理：把操作系统与网络专题的答案补全", "priority": 0, "session_b_probe": "我题库整理的任务进展怎么样了？", "assert_contains": [["操作系统"], ["网络"]]}
+{"task_id": "tc-08", "scenario": "课程实验任务跨会话延续", "task_title": "MIT 6.824 lab 攻坚：完成 Raft 选举部分并跑通测试", "priority": 1, "session_b_probe": "我的分布式课程实验任务做到哪一步了？", "assert_contains": [["Raft"], ["选举"]]}
+{"task_id": "tc-09", "scenario": "技术输出任务跨会话延续", "task_title": "掘金专栏月更计划：发布索引原理与消息队列两篇文章", "priority": 0, "session_b_probe": "我之前定的写作任务还剩什么没做？", "assert_contains": [["索引原理"], ["消息队列"]]}
+{"task_id": "tc-10", "scenario": "人脉维护任务跨会话延续", "task_title": "内推关系维护：约三位学长喝咖啡并更新推荐语料", "priority": 0, "session_b_probe": "我之前安排的人脉相关任务怎么样了？", "assert_contains": [["学长"], ["推荐语料"]]}
+{"task_id": "tc-11", "scenario": "作品集上线任务跨会话延续", "task_title": "作品集部署上线：申请域名并配置 HTTPS 证书", "priority": 1, "session_b_probe": "我那个上线相关的任务进行到哪了？", "assert_contains": [["域名"], ["HTTPS"]]}
+{"task_id": "tc-12", "scenario": "英语学习任务跨会话延续", "task_title": "英语文档精读打卡：每周输出三篇摘要到笔记库", "priority": 0, "session_b_probe": "我的英语学习任务还剩什么？", "assert_contains": [["精读"], ["摘要"]]}
+{"task_id": "tc-13", "scenario": "面试复盘任务跨会话延续", "task_title": "三场面试复盘整理：归纳追问点并补齐知识盲区清单", "priority": 0, "session_b_probe": "我之前说的复盘任务进行得怎么样了？", "assert_contains": [["复盘"], ["盲区"]]}
+{"task_id": "tc-14", "scenario": "薪资谈判准备任务跨会话延续", "task_title": "offer 谈判准备：收集同岗薪资行情并演练谈判话术", "priority": 1, "session_b_probe": "我那个谈判准备的任务进展如何？", "assert_contains": [["行情"], ["话术"]]}
+{"task_id": "tc-15", "scenario": "离职手续任务跨会话延续", "task_title": "离职交接与社保衔接：办工作交接单并确认公积金转移", "priority": 1, "session_b_probe": "我之前提的手续办理任务还剩什么？", "assert_contains": [["交接"], ["公积金"]]}
+{"task_id": "tc-16", "scenario": "学习计划执行任务跨会话延续", "task_title": "分布式一致性学习计划：raft 论文精读两遍并写读书笔记", "priority": 0, "session_b_probe": "我之前定的学习计划任务做到哪了？", "assert_contains": [["raft"], ["笔记"]]}
+{"task_id": "tc-17", "scenario": "副业交付任务跨会话延续", "task_title": "技术顾问月度交付：出具教育平台架构评审意见", "priority": 0, "session_b_probe": "我那个顾问交付的任务进展怎么样？", "assert_contains": [["评审意见"], ["教育平台"]]}
+{"task_id": "tc-18", "scenario": "简历英文版任务跨会话延续", "task_title": "简历英文版翻译：统一术语并请外企朋友润色", "priority": 0, "session_b_probe": "我之前说的英文简历任务进行到哪一步了？", "assert_contains": [["术语"], ["润色"]]}
+{"task_id": "tc-19", "scenario": "开源贡献任务跨会话延续", "task_title": "开源社区贡献：给常用框架提交两个 issue 修复 PR", "priority": 0, "session_b_probe": "我的开源贡献任务还剩什么没完成？", "assert_contains": [["issue"], ["PR"]]}
+{"task_id": "tc-20", "scenario": "入职准备任务跨会话延续", "task_title": "入职材料准备：体检报告复用确认与证件复印件归档", "priority": 1, "session_b_probe": "我之前安排的入职准备任务怎么样了？", "assert_contains": [["体检报告"], ["归档"]]}
+

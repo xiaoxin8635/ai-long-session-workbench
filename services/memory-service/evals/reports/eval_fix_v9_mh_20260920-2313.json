@@ -1,0 +1,138 @@
+{
+  "meta": {
+    "label": "fix_v9_mh",
+    "generated_at": "2026-09-20T15:13:38.079312+00:00",
+    "samples": {
+      "memory_hit": 20
+    },
+    "errors": {
+      "memory_hit": []
+    },
+    "judge_effective": {
+      "context_precision": 0,
+      "hallucination": 20
+    },
+    "token_note": "actual_avg=2016 baseline_avg≈888（全量历史字符上界近似；绝对值仅供参考，以 A/B 相对变化为主）"
+  },
+  "metrics": {
+    "memory_recall_at_5": 0.7,
+    "memory_precision": 0.99375,
+    "context_precision": 0.0,
+    "long_turn_consistency": 0.0,
+    "fact_conflict_rate": 0.0,
+    "hallucination_rate": 1.0,
+    "token_savings": -1.270267250049427,
+    "p95_ttfb_ms": 0.0,
+    "p95_e2e_ms": 0.0,
+    "task_continuity": 0.0
+  },
+  "auxiliary": {
+    "conflict_answer_accuracy": null,
+    "long_turn_assert": null,
+    "task_assert": null,
+    "suite_rows": {
+      "memory_hit": [
+        {
+          "id": "mh-03",
+          "wait_s": 0.3,
+          "recall5": true
+        },
+        {
+          "id": "mh-02",
+          "wait_s": 0.3,
+          "recall5": true
+        },
+        {
+          "id": "mh-04",
+          "wait_s": 0.3,
+          "recall5": true
+        },
+        {
+          "id": "mh-05",
+          "wait_s": 0.3,
+          "recall5": true
+        },
+        {
+          "id": "mh-01",
+          "wait_s": 0.3,
+          "recall5": true
+        },
+        {
+          "id": "mh-08",
+          "wait_s": 0.3,
+          "recall5": false
+        },
+        {
+          "id": "mh-06",
+          "wait_s": 0.3,
+          "recall5": true
+        },
+        {
+          "id": "mh-07",
+          "wait_s": 0.3,
+          "recall5": true
+        },
+        {
+          "id": "mh-09",
+          "wait_s": 0.3,
+          "recall5": false
+        },
+        {
+          "id": "mh-10",
+          "wait_s": 0.3,
+          "recall5": true
+        },
+        {
+          "id": "mh-12",
+          "wait_s": 0.3,
+          "recall5": false
+        },
+        {
+          "id": "mh-15",
+          "wait_s": 87.1,
+          "recall5": true
+        },
+        {
+          "id": "mh-13",
+          "wait_s": 0.3,
+          "recall5": true
+        },
+        {
+          "id": "mh-14",
+          "wait_s": 77.0,
+          "recall5": true
+        },
+        {
+          "id": "mh-17",
+          "wait_s": 112.3,
+          "recall5": false
+        },
+        {
+          "id": "mh-16",
+          "wait_s": 107.2,
+          "recall5": true
+        },
+        {
+          "id": "mh-20",
+          "wait_s": 127.4,
+          "recall5": false
+        },
+        {
+          "id": "mh-19",
+          "wait_s": 122.4,
+          "recall5": true
+        },
+        {
+          "id": "mh-18",
+          "wait_s": 122.4,
+          "recall5": true
+        },
+        {
+          "id": "mh-11",
+          "wait_s": 0.3,
+          "recall5": false
+        }
+      ]
+    }
+  }
+}
