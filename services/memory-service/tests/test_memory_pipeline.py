@@ -374,6 +374,60 @@ def test_retriever_weights_hit_matthew_clamp() -> None:
     assert _retriever._W_HIT < 0.15 * _retriever._W_SIMILARITY
 
 
+def test_retriever_balanced_select_semantic_floor() -> None:
+    """fix_v13 回归：top-k 截断必须给 semantic 分区保底席位。
+
+    fix_v13 分桶取证实锤（fix_v12_mh P 桶 33 行假 FAIL 的检索层根因）：
+    procedural（偏好/习惯）在长会话场景大量落库后按综合分霸占 top-k 的
+    6-7 席，而 builder 的 semantic 区块只能从 top-k 内取 semantic 条目——
+    目标事实相似度第 1 却进不了装配视野。约束：
+    ① semantic 候选充足时 top-k 内至少保留 top_k//2 席；
+    ② semantic 候选不足时其全部条目入选（不得被高分 procedural 挤出）；
+    ③ 输出保持综合分降序。
+    """
+    import uuid
+
+    from app.memory.retriever import _balanced_select
+    from app.memory.schemas import ScoredMemory
+    from app.models.enums import MemoryStatus, MemoryType
+    from app.models.memory import Memory
+
+    def _item(kind: MemoryType, score: float, tag: str) -> ScoredMemory:
+        """构造一条脱离会话的打分记忆（_balanced_select 只读 type/score）。"""
+        mem = Memory(
+            id=uuid.uuid4(),
+            memory_type=kind,
+            key=f"{tag}.key",
+            content=f"content-{tag}",
+            status=MemoryStatus.ACTIVE,
+        )
+        return ScoredMemory(memory=mem, similarity=score, score=score)
+
+    # 场景①②：6 条 procedural 高分 + 2 条 semantic 低分——旧截断下
+    # semantic 全被挤出（即 P 桶 33 行的失败形态）
+    ranked = [_item(MemoryType.PROCEDURAL, 0.90 - i * 0.01, f"p{i}") for i in range(6)]
+    ranked += [
+        _item(MemoryType.SEMANTIC, 0.60, "s-target"),
+        _item(MemoryType.SEMANTIC, 0.59, "s-2"),
+    ]
+    ranked.sort(key=lambda s: s.score, reverse=True)
+    selected = _balanced_select(ranked, 8)
+    kinds = [s.memory.memory_type for s in selected]
+    assert sum(1 for k in kinds if k == MemoryType.SEMANTIC) == 2  # 不足半数时全部保底入选
+    assert any(s.memory.key == "s-target.key" for s in selected)
+
+    # 场景①：semantic 充足（5 条）时保底 half=4 席
+    ranked2 = [_item(MemoryType.PROCEDURAL, 0.95 - i * 0.01, f"q{i}") for i in range(6)]
+    ranked2 += [_item(MemoryType.SEMANTIC, 0.70 - i * 0.01, f"t{i}") for i in range(5)]
+    ranked2.sort(key=lambda s: s.score, reverse=True)
+    selected2 = _balanced_select(ranked2, 8)
+    kinds2 = [s.memory.memory_type for s in selected2]
+    assert sum(1 for k in kinds2 if k == MemoryType.SEMANTIC) == 4
+    assert sum(1 for k in kinds2 if k == MemoryType.PROCEDURAL) == 4
+    scores2 = [s.score for s in selected2]
+    assert scores2 == sorted(scores2, reverse=True)  # 输出保持分序
+
+
 async def test_expired_memory_not_retrieved() -> None:
     """用例 4：TTL 过期记忆不被检索返回（软过期过滤）。"""
     db, ws_id, user_id, sid = await _prepare()

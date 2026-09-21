@@ -118,6 +118,69 @@ def test_recall_at_5_semantic_beyond_top5_still_miss():
     assert metrics.recall_at_5(probes) == 0.0
 
 
+def test_recall_at_5_procedural_bucket_target_hits():
+    """fix_v13 口径：目标条目被注入 procedural 桶前 5 应命中（type 标错不漏判）。
+
+    取证实锤：fix_v12_mh 分桶发现 26/65 FAIL 行的目标实际已被注入
+    procedural 桶（抽取器将时间/地点/数量/偏好类事实标为 procedural，
+    如「美团周四面试」「杭州求职范围」），用户提问时 LLM 本可答对——
+    semantic 单桶判定把「type 标错但已注入」系统性漏判（33→59/100）。
+    """
+    probes = [
+        (
+            [
+                metrics.InjectedItem(type="procedural", source="extract", content=f"偏好{i}")
+                for i in range(4)
+            ]
+            + [
+                metrics.InjectedItem(
+                    type="procedural",
+                    source="extract",
+                    content="用户下周四下午三点有一场美团的视频面试",
+                )
+            ]
+            + [_item("无关事实")],
+            ["美团", "周四"],
+        )
+    ]
+    assert metrics.recall_at_5(probes) == 1.0
+
+
+def test_recall_at_5_procedural_bucket_rank6_miss():
+    """procedural 桶内第 6 位的目标不计命中（双桶口径不等于全量放宽）。"""
+    probes = [
+        (
+            [
+                metrics.InjectedItem(type="procedural", source="extract", content=f"偏好{i}")
+                for i in range(5)
+            ]
+            + [metrics.InjectedItem(type="procedural", source="extract", content="美团周四面试")],
+            ["美团"],
+        )
+    ]
+    assert metrics.recall_at_5(probes) == 0.0
+
+
+def test_recall_at_5_episodic_task_not_in_window():
+    """episodic/task 条目不入判定窗：期望事实只存在于摘要/任务条目时判 miss。
+
+    语义：期望事实若只出现在会话摘要/任务条目，说明独立记忆抽取失败，
+    判 FAIL 是正确信号（摘要命中不能替代独立记忆召回）。
+    """
+    probes = [
+        (
+            [
+                metrics.InjectedItem(
+                    type="episodic", source="session_summary:1", content="周四与美团面试"
+                ),
+                metrics.InjectedItem(type="task", source="task:9", content="美团周四面试准备"),
+            ],
+            ["美团"],
+        )
+    ]
+    assert metrics.recall_at_5(probes) == 0.0
+
+
 # ---- metrics.memory_precision / conflict_rate / consistency ----
 
 

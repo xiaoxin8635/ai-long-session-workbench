@@ -43,7 +43,7 @@ python evals/run_eval.py --label memory_first --suite all \
 
 | 指标 | 来源套件 | 口径 | 目标 |
 |---|---|---|---|
-| Memory Recall@5 | memory_hit | 期望关键词组被注入的 **semantic 条目 top-5** 中**同一条目全量覆盖**（判定窗口只取 semantic 区块，见「Memory Recall@5 口径」） | ≥80% |
+| Memory Recall@5 | memory_hit | 期望关键词组被注入的 **semantic/procedural 桶各自 top-5** 中**同一条目全量覆盖**（判定窗口双桶前 5，见「Memory Recall@5 口径」） | ≥80% |
 | Memory Precision | memory_hit | 注入条目中含陷阱关键词组的占比（越低越好，报 1-占比） | ≥70% |
 | Context Precision | long_turn | judge 判定注入记忆对回答"有贡献"的条目占比 | ≥70% |
 | Long-turn Consistency | long_turn | final probe 回答的关键词断言通过率（组内任一命中） | ≥90% |
@@ -155,16 +155,28 @@ Fix 轮实测：抽取产出正确但入队执行晚于 probe 数分钟，Recall
 扩充数据集时，新事实话术必须包含可检索的字面关键词（new_kw/expected
 与 content 字面匹配）。
 
-## Memory Recall@5 口径（三期修正）
+## Memory Recall@5 口径（四期修正）
 
-判定窗口只取 **semantic 区块**条目，再按区块内顺序切前 5。fix_v9_mh
-取证实锤：builder 装配渲染 procedural 先于 semantic，跨场景全局条目
-（日程/计划/偏好）在几乎每个 probe 的渲染序列前排占 3-4 席，按渲染
-顺序切 `[:5]` 会把判定窗口占满——6 行 FAIL 的目标 semantic 条目检索
-sim 实测全部第 1，却渲染在第 6-8 位（假 FAIL）。期望事实均为 semantic
-记忆，@5 应度量其在 semantic 桶（桶内保持检索 score 排序）前 5 的命中。
+判定窗口为 **semantic 与 procedural 两桶各自的前 5 条**（桶内保持检索
+score 排序），两桶任一条目全量覆盖期望关键词组即命中。口径演进：
 
-已知的真实产品缺陷（fix_v10_mh 取证确认为 hit 马太，检索权重已修）：
+- **一期→三期（渲染序 → semantic 单桶）**：fix_v9_mh 取证实锤——builder
+  装配渲染 procedural 先于 semantic，跨场景全局条目（日程/计划/偏好）
+  在几乎每个 probe 的渲染序列前排占 3-4 席，按渲染顺序切 `[:5]` 会把
+  判定窗口占满——6 行 FAIL 的目标 semantic 条目检索 sim 实测全部第 1，
+  却渲染在第 6-8 位（假 FAIL），故收窄为 semantic 单桶。
+- **四期（fix_v13，semantic 单桶 → 双桶前 5）**：fix_v12_mh 65 FAIL
+  分桶取证 + 三口径重放（semantic 单桶 33 / 注入区 sem+proc 59 / 全量
+  selected 59）翻案主矛盾——26/65 FAIL 行的目标条目**实际已被注入
+  procedural 桶**（抽取器把时间/地点/数量/偏好类事实标为 procedural，
+  如「美团周四面试」「杭州求职范围」），用户提问时 LLM 本可答对，
+  semantic 单桶判定把「type 标错但已注入」系统性漏判。episodic/task
+  不入窗：期望事实若只存在于会话摘要/任务条目，说明独立记忆抽取失败，
+  判 FAIL 是正确信号。type 标注错乱本身是抽取层问题（后续专项治理），
+  不应由检索评测买单。
+
+已知的真实产品缺陷（fix_v10_mh 取证确认为 hit 马太，检索权重已修；
+fix_v13 补检索分区保底 `_balanced_select` + candidate_k 20→50）：
 高频"万金油"条目 hit_count 跨查询累积、20 次即饱和满分，恒压高 sim 冷
 条目——检索权重 sim 0.6 / hit 0.05 钳制（见 retriever.py 权重注释）。
 

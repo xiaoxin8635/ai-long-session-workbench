@@ -2,7 +2,8 @@
 
 流程：query 向量化 → 向量召回（active + conflicted/未过期/归属过滤）→ 加权重排
 （sim*0.6 + importance*0.2 + recency*0.15 + hit*0.05，CONFLICTED 条目乘惩罚系数）
-→ 同 key 去重 → top-k → 命中写回 hit_count 与 HIT 事件。
+→ 同 key 去重 → 分区保底截断 top-k（semantic/procedural 各保底半数席位）→
+命中写回 hit_count 与 HIT 事件。
 
 CONFLICTED（待用户裁决）条目参与检索但降权：完全排除会使待裁决期间的信息
 从上下文静默消失（Fix A 疑似冲突降级的副作用，评测优化轮实锤）；降权使其
@@ -22,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.llm.embeddings import EmbeddingClient, EmbeddingError
 from app.memory.schemas import ScoredMemory
-from app.models.enums import MemoryStatus
+from app.models.enums import MemoryStatus, MemoryType
 from app.repositories import memory_repo
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,39 @@ def _recency_score(updated_at: datetime | None) -> float:
     updated = updated_at if updated_at.tzinfo else updated_at.replace(tzinfo=UTC)
     days = max((now - updated).total_seconds() / 86400.0, 0.0)
     return math.exp(-days / _RECENCY_HALF_LIFE_DAYS)
+
+
+def _balanced_select(ranked: list[ScoredMemory], top_k: int) -> list[ScoredMemory]:
+    """分区保底截断：semantic 与 procedural 各保底约半数席位。
+
+    评测优化轮四期取证实锤（fix_v13 分桶取证，fix_v12_mh P 桶 33 行）：
+    procedural（偏好/习惯）在长会话场景大量落库后按综合分霸占 top-k 的
+    6-7 席，semantic（事实）候选被压缩到 1-2 条——目标事实检索相似度
+    第 1 却进不了装配视野（builder 的 semantic 区块只能从 top-k 内取
+    semantic 条目）。保底规则：semantic 取前 half（half=top_k//2）、
+    procedural 取前 top_k-half；某分区不足时另一分区补位；输出保持
+    综合分降序。
+
+    Args:
+        ranked: 同 key 去重后的综合分降序候选。
+        top_k: 最终返回条数。
+
+    Returns:
+        分区保底后的 top-k（分数降序）。
+    """
+    if top_k <= 0 or len(ranked) <= top_k:
+        return list(ranked)
+    half = max(1, top_k // 2)
+    semantic = [s for s in ranked if s.memory.memory_type == MemoryType.SEMANTIC]
+    procedural = [s for s in ranked if s.memory.memory_type == MemoryType.PROCEDURAL]
+    picked = semantic[:half] + procedural[: top_k - half]
+    if len(picked) < top_k:
+        # 某分区候选不足 top_k-half：用全量剩余条目（含另一分区）按分序补位
+        picked_set = {id(s) for s in picked}
+        picked.extend(s for s in ranked if id(s) not in picked_set)
+    selected = picked[:top_k]
+    selected.sort(key=lambda s: s.score, reverse=True)
+    return selected
 
 
 class MemoryRetriever:
@@ -121,7 +155,7 @@ class MemoryRetriever:
                 best_by_key[memory.key] = scored
 
         results = sorted(best_by_key.values(), key=lambda s: s.score, reverse=True)
-        selected = results[: top_k or settings.retrieval_top_k]
+        selected = _balanced_select(results, top_k or settings.retrieval_top_k)
 
         # ---- 命中写回（独立事务 + 死锁防御，Fix 轮实锤后加固）----
         # 原实现 commit 由调用方统一，hit_count UPDATE 的行锁贯穿整个 LLM 生成期，

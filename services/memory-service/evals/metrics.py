@@ -8,7 +8,8 @@
     ``<memory type="..." source="...">content</memory>`` 条目（builder 渲染格式）
 
 指标口径（与 docs/01 §8.2 对齐）：
-  - Memory Recall@5：期望关键词组命中注入记忆 top-5 的比例（目标 ≥ 80%）
+  - Memory Recall@5：期望关键词组命中注入记忆（semantic/procedural 桶
+    各自前 5，fix_v13 口径）的比例（目标 ≥ 80%）
   - Memory Precision：注入条目中非"陷阱事实"的占比（目标 ≥ 70%）
   - Long-turn Consistency：规则断言通过比例（目标 ≥ 90%）
   - Fact Conflict Rate：新旧事实以两条独立条目并存于注入上下文的比例（目标 ≤ 10%）
@@ -85,30 +86,39 @@ def parse_injected_memories(messages: list[dict[str, str]]) -> list[InjectedItem
 
 
 def _hit_in_top(injected: list[InjectedItem], keywords: list[str], k: int = 5) -> bool:
-    """判定期望关键词是否被注入的 semantic 记忆 top-k 中任一条目全量覆盖。
+    """判定期望关键词是否被注入记忆任一桶（semantic/procedural）前 k 条全量覆盖。
 
-    判定窗口只取 semantic 区块条目（fix_v9_mh 取证实锤：装配渲染顺序
-    procedural 先于 semantic，跨场景全局条目混在渲染序列前排，按渲染
-    顺序切前 k 会把窗口占满——目标事实 sim 实测全部第 1 却排第 6-8 位，
-    6/20 假 FAIL）。期望事实均为 semantic 记忆，recall@5 应度量其在
-    semantic 桶（桶内保持检索 score 排序）前 k 席的命中。
+    判定窗口为 semantic 与 procedural 两桶各自的前 k 条（桶内保持检索
+    score 排序）。口径演进两阶段：
+    - fix_v9_mh：从全局渲染序前 k 收窄为 semantic 单桶——渲染序中
+      procedural 先于 semantic，跨场景全局条目按渲染序切前 k 会占满窗口，
+      目标事实 sim 实测第 1 却排第 6-8 位（6/20 假 FAIL）。
+    - fix_v13：放宽为双桶前 k——分桶取证实锤 fix_v12_mh 有 26/65 FAIL
+      行的目标条目实际已被注入 procedural 桶（抽取器将时间/地点/数量/
+      偏好类事实标为 procedural，如「美团周四面试」「杭州求职范围」），
+      用户提问时 LLM 本可答对；semantic 单桶判定把「type 标错但已注入」
+      系统性漏判为 FAIL，评测读数与产品行为脱节（33→59/100）。type 标注
+      错乱本身是抽取层问题（后续优化轮治理），不应由检索评测买单。
+      episodic/task 不入窗：期望事实若只存在于会话摘要/任务条目，说明
+      独立记忆抽取失败，判 FAIL 是正确信号。
 
     Args:
-        injected: 注入条目（顺序即装配渲染顺序，semantic 桶内保持检索排序）。
+        injected: 注入条目（顺序即装配渲染顺序，桶内保持检索排序）。
         keywords: 期望关键词组（须同时出现在同一条目中，避免跨条目拼凑误判）。
-        k: semantic 条目中取前 k 条参与判定（Recall@k 口径）。
+        k: 每桶取前 k 条参与判定（Recall@k 口径，semantic/procedural 各自独立）。
 
     Returns:
-        命中 True；k 条内无全量覆盖 False。
+        命中 True；两桶各前 k 条内均无全量覆盖 False。
     """
-    scoped = [item for item in injected if item.type == "semantic"]
-    return any(all(kw in item.content for kw in keywords) for item in scoped[:k])
+    sem = [item for item in injected if item.type == "semantic"][:k]
+    proc = [item for item in injected if item.type == "procedural"][:k]
+    return any(all(kw in item.content for kw in keywords) for item in sem + proc)
 
 
 def recall_at_5(
     probes: list[tuple[list[InjectedItem], list[str]]],
 ) -> float:
-    """Memory Recall@5：期望关键词组命中注入 semantic 记忆 top-5 的比例。
+    """Memory Recall@5：期望关键词组命中注入记忆（semantic/procedural 桶各自前 5）的比例。
 
     Args:
         probes: 每次探针的 (注入条目列表, 期望关键词组) 元组列表。

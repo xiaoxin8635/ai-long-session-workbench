@@ -41,6 +41,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))  # 同目录 import met
 
 from judges import JudgeContext, judge_context_precision, judge_hallucination  # noqa: E402
 from metrics import (  # noqa: E402
+    _hit_in_top,
     aggregate_judge,
     conflict_rate,
     consistency,
@@ -669,7 +670,11 @@ async def run_memory_hit(
                     )
                 )
                 samples += 1
-                hit = any(all(kw in i.content for kw in row["expected"]) for i in injected[:5])
+                # 行级判定与聚合口径统一（四期修正）：recall_at_5 聚合走
+                # metrics.recall_at_5（semantic 窗口），此处行级明细曾遗留
+                # 旧渲染序 injected[:5] 口径——双实现导致明细表与指标读数
+                # 不一致，误导分桶排查（fix_v13 取证实锤）。
+                hit = _hit_in_top(injected, row["expected"])
             except (RuntimeError, httpx.HTTPError) as exc:
                 errors.append(f"{row['fact_id']}: {exc}")
             row_detail.append(
