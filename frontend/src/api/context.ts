@@ -7,6 +7,15 @@
  */
 import { api } from "./client";
 
+/**
+ * 装配预览专用超时（毫秒）。
+ *
+ * preview 是 CPU 重推理链路（query 向量化 + 记忆检索 + 命中多切片时的 rerank），
+ * 冷启动或大 workspace 下可远超 client 默认 15s，故单独放宽到 60s 兜底，
+ * 避免误报“请求超时”。后端已加启动预热，热态通常 <1s。
+ */
+const PREVIEW_TIMEOUT_MS = 60_000;
+
 /** 单区块装配用量。 */
 export interface ContextSectionUsage {
   /** 区块标识（system/procedural/semantic/episodic/working/rag/tool_results）。 */
@@ -49,11 +58,15 @@ export async function previewContext(params: {
   query: string;
   profile?: string;
 }): Promise<ContextPreview> {
-  const { data } = await api.post<ContextPreview>("/api/context/preview", {
-    workspace_id: params.workspaceId,
-    session_id: params.sessionId,
-    query: params.query,
-    ...(params.profile ? { profile: params.profile } : {}),
-  });
+  const { data } = await api.post<ContextPreview>(
+    "/api/context/preview",
+    {
+      workspace_id: params.workspaceId,
+      session_id: params.sessionId,
+      query: params.query,
+      ...(params.profile ? { profile: params.profile } : {}),
+    },
+    { timeout: PREVIEW_TIMEOUT_MS }
+  );
   return data;
 }

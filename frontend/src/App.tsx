@@ -13,6 +13,7 @@ import {
   useLocation,
 } from "react-router-dom";
 import AppLayout from "./components/AppLayout";
+import { ToastViewport } from "./components/ui/ToastViewport";
 import ChatPage from "./pages/ChatPage";
 import KnowledgePage from "./pages/KnowledgePage";
 import LoginPage from "./pages/Login";
@@ -58,6 +59,8 @@ export default function App(): JSX.Element {
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      {/* 全局 Toast 视口（撤销式删除等通知） */}
+      <ToastViewport />
     </BrowserRouter>
   );
 }

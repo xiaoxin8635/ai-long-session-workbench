@@ -1,25 +1,25 @@
 /**
- * 设置页（EchoDesk 前端，M-F5）。
+ * 设置页（EchoDesk 前端 · 「宣纸书卷」古风，M-F5）。
  *
  * 个人资料（auth store 只读展示，服务端暂无资料更新端点）+ 当前
  * workspace 信息 + 成员管理（ADMIN+：列表/按用户名添加；非 ADMIN
- * 展示 403 提示）。
+ * 展示 403 提示）。区块以竹青书签竖条 + 宋体小标题分节，成员行纸面墨边。
  */
 import { useEffect, useState, type JSX } from "react";
 import { addMember, listMembers, listWorkspaces } from "../api/workspaces";
 import type { MemberRole, WorkspaceMember, WorkspaceRead } from "../api/workspaces";
 import { errorMessage, useAuthStore } from "../stores/auth";
 
-/** 角色徽标文案与样式。 */
+/** 角色徽标文案与样式（古风 token 映射：所有者=紫棠 / 管理员=黛蓝 / 成员=淡墨）。 */
 const ROLE_LABELS: Record<MemberRole, string> = {
   owner: "所有者",
   admin: "管理员",
   member: "成员",
 };
 const ROLE_STYLES: Record<MemberRole, string> = {
-  owner: "bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-400",
-  admin: "bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-400",
-  member: "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400",
+  owner: "bg-violet/12 text-violet ring-1 ring-inset ring-violet/30",
+  admin: "bg-info/12 text-info ring-1 ring-inset ring-info/30",
+  member: "bg-line/8 text-secondary ring-1 ring-inset ring-line/15",
 };
 
 /**
@@ -95,12 +95,18 @@ export default function SettingsPage(): JSX.Element {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5 p-6">
-      <h1 className="text-lg font-semibold">设置</h1>
+    <div className="anim-rise-in mx-auto max-w-3xl space-y-5 p-6">
+      <h1 className="flex items-center gap-2 font-display text-lg font-semibold text-primary">
+        <span className="bookmark-bar h-4" aria-hidden />
+        设置
+      </h1>
 
       {/* 个人资料（服务端暂无更新端点，只读展示） */}
-      <section className="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
-        <h2 className="text-sm font-semibold">个人资料</h2>
+      <section className="rounded-xl border border-line/12 bg-surface/50 p-4 shadow-panel">
+        <h2 className="flex items-center gap-2 font-display text-sm font-semibold text-primary">
+          <span className="bookmark-bar h-3.5" aria-hidden />
+          个人资料
+        </h2>
         <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 text-xs sm:grid-cols-2">
           <ProfileItem label="用户名" value={user?.username ?? "-"} />
           <ProfileItem label="显示名" value={user?.display_name ?? "-"} />
@@ -111,10 +117,13 @@ export default function SettingsPage(): JSX.Element {
       </section>
 
       {/* workspace 信息 */}
-      <section className="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
-        <h2 className="text-sm font-semibold">工作区</h2>
+      <section className="rounded-xl border border-line/12 bg-surface/50 p-4 shadow-panel">
+        <h2 className="flex items-center gap-2 font-display text-sm font-semibold text-primary">
+          <span className="bookmark-bar h-3.5" aria-hidden />
+          工作区
+        </h2>
         {workspace === null ? (
-          <p className="mt-2 text-xs text-slate-400">加载中…</p>
+          <p className="mt-2 font-display text-xs text-muted">加载中…</p>
         ) : (
           <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 text-xs sm:grid-cols-2">
             <ProfileItem label="名称" value={workspace.name} />
@@ -125,23 +134,27 @@ export default function SettingsPage(): JSX.Element {
       </section>
 
       {/* 成员管理（ADMIN+） */}
-      <section className="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
-        <h2 className="text-sm font-semibold">成员管理</h2>
+      <section className="rounded-xl border border-line/12 bg-surface/50 p-4 shadow-panel">
+        <h2 className="flex items-center gap-2 font-display text-sm font-semibold text-primary">
+          <span className="bookmark-bar h-3.5" aria-hidden />
+          成员管理
+        </h2>
         {members !== null && (
           <ul className="mt-3 space-y-1.5">
-            {members.map((m) => (
+            {members.map((m, i) => (
               <li
                 key={m.user_id}
-                className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs dark:bg-slate-900"
+                className="anim-rise-in flex items-center gap-2 rounded-lg border border-line/8 bg-elevated/60 px-3 py-2 text-xs"
+                style={{ animationDelay: `${i * 40}ms` }}
               >
-                <span className={"rounded px-1.5 py-0.5 text-[10px] " + ROLE_STYLES[m.role]}>
+                <span className={"rounded px-1.5 py-0.5 font-display text-[10px] " + ROLE_STYLES[m.role]}>
                   {ROLE_LABELS[m.role]}
                 </span>
-                <span className="font-medium">{m.username}</span>
+                <span className="font-medium text-primary">{m.username}</span>
                 {m.display_name !== null && m.display_name !== "" && (
-                  <span className="text-slate-400">{m.display_name}</span>
+                  <span className="text-muted">{m.display_name}</span>
                 )}
-                <span className="ml-auto text-slate-400">
+                <span className="ml-auto text-muted">
                   {new Date(m.created_at).toLocaleDateString()} 加入
                 </span>
               </li>
@@ -149,7 +162,7 @@ export default function SettingsPage(): JSX.Element {
           </ul>
         )}
         {members === null && memberError !== null && (
-          <p className="mt-2 text-xs text-slate-400">{memberError}（成员管理需要 ADMIN 及以上角色）</p>
+          <p className="mt-2 text-xs text-muted">{memberError}（成员管理需要 ADMIN 及以上角色）</p>
         )}
 
         {/* 添加成员表单（ADMIN+ 时展示；非 ADMIN 提交会收到服务端 403 文案） */}
@@ -163,12 +176,12 @@ export default function SettingsPage(): JSX.Element {
               }
             }}
             placeholder="按用户名添加成员"
-            className="flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-900"
+            className="input min-w-0 flex-1 rounded-lg px-2.5 py-1.5 text-xs"
           />
           <select
             value={roleDraft}
             onChange={(e) => setRoleDraft(e.target.value as Exclude<MemberRole, "owner">)}
-            className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-900"
+            className="input rounded-lg px-2.5 py-1.5 text-xs"
             aria-label="成员角色"
           >
             <option value="member">成员</option>
@@ -178,13 +191,13 @@ export default function SettingsPage(): JSX.Element {
             type="button"
             disabled={adding || usernameDraft.trim() === ""}
             onClick={() => void submitAdd()}
-            className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-sky-700 disabled:opacity-40"
+            className="btn-primary shrink-0 rounded-lg px-3 py-1.5 text-xs"
           >
             添加
           </button>
         </div>
         {members !== null && memberError !== null && (
-          <p role="alert" className="mt-2 text-xs text-red-600 dark:text-red-400">
+          <p role="alert" className="mt-2 text-xs text-danger">
             {memberError}
           </p>
         )}
@@ -202,8 +215,11 @@ export default function SettingsPage(): JSX.Element {
 function ProfileItem({ label, value, mono = false }: { label: string; value: string; mono?: boolean }): JSX.Element {
   return (
     <div className="flex items-center gap-2">
-      <dt className="shrink-0 text-slate-400">{label}</dt>
-      <dd className={"min-w-0 truncate " + (mono ? "font-mono text-[11px]" : "")} title={value}>
+      <dt className="shrink-0 text-muted">{label}</dt>
+      <dd
+        className={"min-w-0 truncate text-secondary " + (mono ? "font-mono text-[11px]" : "")}
+        title={value}
+      >
         {value}
       </dd>
     </div>

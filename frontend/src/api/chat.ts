@@ -58,6 +58,8 @@ export interface ChatStreamParams {
   content: string;
   /** 是否启用 Agent 工具循环（默认 true）。 */
   enableTools?: boolean;
+  /** 中断信号（「停止生成」用；abort 后 fetch 以 AbortError 拒绝）。 */
+  signal?: AbortSignal;
   /** 流式回调集合。 */
   handlers: ChatStreamHandlers;
 }
@@ -72,6 +74,8 @@ export interface ChatResumeParams {
   callId: string;
   /** true 执行工具 / false 拒绝。 */
   approve: boolean;
+  /** 中断信号（「停止生成」用）。 */
+  signal?: AbortSignal;
   /** 流式回调集合（与主对话同构）。 */
   handlers: ChatStreamHandlers;
 }
@@ -83,7 +87,11 @@ export interface ChatResumeParams {
  * @param body - JSON 请求体。
  * @returns 响应字节流。
  */
-async function openStream(url: string, body: unknown): Promise<ReadableStream<Uint8Array>> {
+async function openStream(
+  url: string,
+  body: unknown,
+  signal?: AbortSignal
+): Promise<ReadableStream<Uint8Array>> {
   const token = useAuthStore.getState().accessToken;
   if (!token) {
     throw new Error("未登录");
@@ -92,6 +100,7 @@ async function openStream(url: string, body: unknown): Promise<ReadableStream<Ui
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify(body),
+    signal,
   });
   if (!resp.ok || resp.body === null) {
     // 尽力解析 RFC 7807 problem+json 的中文 detail（如 resume 409 已终态）
@@ -185,7 +194,7 @@ export async function streamChat(params: ChatStreamParams): Promise<void> {
       enable_tools: params.enableTools ?? true,
     },
   };
-  const respBody = await openStream("/v1/chat/completions", body);
+  const respBody = await openStream("/v1/chat/completions", body, params.signal);
   await consumeChatEvents(respBody, params.handlers);
 }
 
@@ -202,6 +211,6 @@ export async function streamResume(params: ChatResumeParams): Promise<void> {
     call_id: params.callId,
     approve: params.approve,
   };
-  const respBody = await openStream("/v1/chat/resume", body);
+  const respBody = await openStream("/v1/chat/resume", body, params.signal);
   await consumeChatEvents(respBody, params.handlers);
 }

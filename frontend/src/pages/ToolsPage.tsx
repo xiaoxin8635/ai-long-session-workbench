@@ -1,10 +1,11 @@
 /**
- * 工具页（EchoDesk 前端，M-F3）。
+ * 工具页（EchoDesk 前端 · 「宣纸书卷」古风，M-F3）。
  *
  * 三块：工具清单（含风险分级与参数 schema）、直调执行调试（external 202
  * 待确认时给确认/拒绝按钮）、调用审计（created_at 倒序，可刷新）。
  */
 import { useEffect, useState, type JSX } from "react";
+import { X } from "lucide-react";
 import { RiskBadge } from "../components/ToolConfirmCard";
 import * as toolsApi from "../api/tools";
 import type { ToolCall, ToolExecutionResult, ToolInfo } from "../api/tools";
@@ -112,43 +113,59 @@ export default function ToolsPage(): JSX.Element {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-6">
-      <h1 className="text-lg font-semibold">工具</h1>
+    <div className="anim-rise-in mx-auto max-w-4xl space-y-6 p-6">
+      <h1 className="flex items-center gap-2 font-display text-lg font-semibold text-primary">
+        <span className="bookmark-bar h-4" aria-hidden />
+        工具
+      </h1>
 
       {error !== null && (
-        <div role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950 dark:text-red-300">
-          {error}
+        <div
+          role="alert"
+          className="flex items-center justify-between rounded-lg border border-danger/25 bg-danger/10 px-3 py-2 text-xs text-danger"
+        >
+          <span className="truncate">{error}</span>
+          <button type="button" onClick={() => setError(null)} className="ml-3 text-danger" aria-label="关闭错误提示">
+            <X className="size-3.5" strokeWidth={2.2} />
+          </button>
         </div>
       )}
 
       {/* 工具清单 */}
       <section>
-        <h2 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-300">已注册工具</h2>
+        <h2 className="mb-2 flex items-center gap-2 font-display text-sm font-semibold text-primary">
+          <span className="bookmark-bar h-3.5" aria-hidden />
+          已注册工具
+        </h2>
         <div className="grid gap-2">
-          {tools.map((t) => (
+          {tools.map((t, i) => (
             <div
               key={t.name}
-              className="rounded-xl border border-slate-200 bg-white p-3 text-sm dark:border-slate-800 dark:bg-slate-900"
+              className="card-paper anim-rise-in rounded-xl p-3 text-sm"
+              style={{ animationDelay: `${Math.min(i, 12) * 30}ms` }}
             >
               <div className="flex items-center gap-2">
-                <span className="font-medium">{t.name}</span>
+                <span className="font-mono font-medium text-primary">{t.name}</span>
                 <RiskBadge risk={t.risk} />
               </div>
-              <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{t.description}</p>
+              <p className="mt-1 text-xs leading-5 text-secondary">{t.description}</p>
             </div>
           ))}
-          {tools.length === 0 && <p className="text-xs text-slate-400">暂无工具</p>}
+          {tools.length === 0 && <p className="font-display text-xs text-muted">暂无工具</p>}
         </div>
       </section>
 
       {/* 直调执行调试 */}
       <section>
-        <h2 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-300">直调执行（调试）</h2>
+        <h2 className="mb-2 flex items-center gap-2 font-display text-sm font-semibold text-primary">
+          <span className="bookmark-bar h-3.5" aria-hidden />
+          直调执行（调试）
+        </h2>
         <div className="flex gap-2">
           <select
             value={execTool}
             onChange={(e) => setExecTool(e.target.value)}
-            className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900"
+            className="input rounded-lg px-2.5 py-1.5 text-sm"
           >
             {tools.map((t) => (
               <option key={t.name} value={t.name}>
@@ -160,21 +177,21 @@ export default function ToolsPage(): JSX.Element {
             value={execArgs}
             onChange={(e) => setExecArgs(e.target.value)}
             placeholder='{"url": "https://example.com"}'
-            className="flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900"
+            className="input min-w-0 flex-1 rounded-lg px-2.5 py-1.5 font-mono text-sm"
           />
           <button
             type="button"
             disabled={busy || workspaceId === null || execTool === ""}
             onClick={() => void handleExecute()}
-            className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-sky-700 disabled:opacity-50"
+            className="btn-primary shrink-0 rounded-lg px-3 py-1.5 text-sm"
           >
             执行
           </button>
         </div>
         {execResult !== null && (
-          <div className="mt-2 rounded-xl border border-slate-200 bg-white p-3 text-xs dark:border-slate-800 dark:bg-slate-900">
-            <p>
-              call_id：<code>{execResult.call_id}</code> · status：{execResult.status}
+          <div className="card-paper mt-2 rounded-xl p-3 text-xs">
+            <p className="text-secondary">
+              call_id：<code className="font-mono text-primary">{execResult.call_id}</code> · status：{execResult.status}
             </p>
             {execResult.requires_confirmation ? (
               <div className="mt-2 flex gap-2">
@@ -182,7 +199,7 @@ export default function ToolsPage(): JSX.Element {
                   type="button"
                   disabled={busy}
                   onClick={() => void handleConfirm(true)}
-                  className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-emerald-700 disabled:opacity-50"
+                  className="btn-primary rounded-lg px-3 py-1.5 text-xs"
                 >
                   确认执行
                 </button>
@@ -190,13 +207,13 @@ export default function ToolsPage(): JSX.Element {
                   type="button"
                   disabled={busy}
                   onClick={() => void handleConfirm(false)}
-                  className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-300 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-300"
+                  className="btn-ghost rounded-lg px-3 py-1.5 text-xs"
                 >
                   拒绝
                 </button>
               </div>
             ) : (
-              <pre className="mt-2 max-h-40 overflow-auto rounded-lg bg-slate-50 p-2 leading-5 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+              <pre className="mt-2 max-h-40 overflow-auto rounded-lg border border-line/10 bg-base/60 p-2.5 font-mono text-xs leading-5 text-secondary">
                 {execResult.error ?? JSON.stringify(execResult.result, null, 2)}
               </pre>
             )}
@@ -207,18 +224,21 @@ export default function ToolsPage(): JSX.Element {
       {/* 调用审计 */}
       <section>
         <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300">调用审计</h2>
+          <h2 className="flex items-center gap-2 font-display text-sm font-semibold text-primary">
+            <span className="bookmark-bar h-3.5" aria-hidden />
+            调用审计
+          </h2>
           <button
             type="button"
             onClick={() => void refresh()}
-            className="text-xs text-sky-600 hover:underline dark:text-sky-400"
+            className="rounded-md px-2 py-0.5 text-xs text-accent transition-colors hover:bg-accent/10"
           >
             刷新
           </button>
         </div>
-        <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+        <div className="overflow-x-auto rounded-xl border border-line/12 shadow-panel">
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+            <thead className="bg-accent/8 text-secondary">
               <tr>
                 <th className="px-3 py-2 font-medium">时间</th>
                 <th className="px-3 py-2 font-medium">工具</th>
@@ -227,23 +247,23 @@ export default function ToolsPage(): JSX.Element {
                 <th className="px-3 py-2 font-medium">结果摘要</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 bg-white dark:divide-slate-800 dark:bg-slate-900 dark:text-slate-300">
+            <tbody className="divide-y divide-line/10 bg-surface/60 text-secondary">
               {calls.map((c) => (
-                <tr key={c.id}>
-                  <td className="whitespace-nowrap px-3 py-2">{new Date(c.created_at).toLocaleString()}</td>
-                  <td className="px-3 py-2 font-medium">{c.tool_name}</td>
+                <tr key={c.id} className="transition-colors hover:bg-accent/6">
+                  <td className="whitespace-nowrap px-3 py-2 font-mono">{new Date(c.created_at).toLocaleString()}</td>
+                  <td className="px-3 py-2 font-mono font-medium text-primary">{c.tool_name}</td>
                   <td className="px-3 py-2">
                     <RiskBadge risk={c.risk_level} />
                   </td>
                   <td className="px-3 py-2">{c.status}</td>
-                  <td className="max-w-xs truncate px-3 py-2 text-slate-500 dark:text-slate-400" title={c.result_digest ?? ""}>
+                  <td className="max-w-xs truncate px-3 py-2 text-muted" title={c.result_digest ?? ""}>
                     {c.result_digest ?? "-"}
                   </td>
                 </tr>
               ))}
               {calls.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-3 py-3 text-center text-slate-400">
+                  <td colSpan={5} className="px-3 py-4 text-center font-display text-muted">
                     暂无调用记录
                   </td>
                 </tr>

@@ -1,11 +1,12 @@
 /**
- * 用量统计页（EchoDesk 前端，M-F5）。
+ * 用量统计页（EchoDesk 前端 · 「宣纸书卷」古风，M-F5）。
  *
  * 读取 `GET /api/usage/summary`：窗口天数切换、总量/会话/轮次概览卡、
  * 记忆/检索/工具三区块 token 拆分占比条、按日趋势柱状图（纯 CSS 实现，
  * 不引入图表库）。
  */
 import { useEffect, useState, type JSX } from "react";
+import { X } from "lucide-react";
 import { fetchUsageSummary } from "../api/usage";
 import type { UsageSummary } from "../api/usage";
 import { listWorkspaces } from "../api/workspaces";
@@ -66,9 +67,9 @@ export default function UsagePage(): JSX.Element {
     totals === undefined
       ? []
       : [
-          { key: "memory_tokens", label: "记忆", tokens: totals.memory_tokens, color: "bg-sky-500" },
-          { key: "rag_tokens", label: "检索", tokens: totals.rag_tokens, color: "bg-emerald-500" },
-          { key: "tool_tokens", label: "工具", tokens: totals.tool_tokens, color: "bg-violet-500" },
+          { key: "memory_tokens", label: "记忆", tokens: totals.memory_tokens, color: "bg-accent" },
+          { key: "rag_tokens", label: "检索", tokens: totals.rag_tokens, color: "bg-teal" },
+          { key: "tool_tokens", label: "工具", tokens: totals.tool_tokens, color: "bg-warning" },
         ];
   // 按日趋势柱高基准
   const maxDayTokens = Math.max(
@@ -77,13 +78,16 @@ export default function UsagePage(): JSX.Element {
   );
 
   return (
-    <div className="mx-auto max-w-4xl space-y-5 p-6">
+    <div className="anim-rise-in mx-auto max-w-4xl space-y-5 p-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold">用量</h1>
+        <h1 className="flex items-center gap-2 font-display text-lg font-semibold text-primary">
+          <span className="bookmark-bar h-4" aria-hidden />
+          用量
+        </h1>
         <select
           value={days}
           onChange={(e) => setDays(Number(e.target.value))}
-          className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-900"
+          className="input rounded-lg px-2.5 py-1.5 text-xs"
           aria-label="统计窗口"
         >
           {DAY_OPTIONS.map((d) => (
@@ -97,13 +101,16 @@ export default function UsagePage(): JSX.Element {
       {error !== null && (
         <div
           role="alert"
-          className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950 dark:text-red-300"
+          className="flex items-center justify-between rounded-lg border border-danger/25 bg-danger/10 px-3 py-2 text-xs text-danger"
         >
-          {error}
+          <span className="truncate">{error}</span>
+          <button type="button" onClick={() => setError(null)} className="ml-3 text-danger" aria-label="关闭错误提示">
+            <X className="size-3.5" strokeWidth={2.2} />
+          </button>
         </div>
       )}
 
-      {loading && <p className="py-8 text-center text-xs text-slate-400">加载中…</p>}
+      {loading && <p className="py-8 text-center font-display text-xs text-muted">加载中…</p>}
 
       {!loading && summary !== null && (
         <>
@@ -117,18 +124,24 @@ export default function UsagePage(): JSX.Element {
           </div>
 
           {/* 区块拆分 */}
-          <section className="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
-            <h2 className="text-sm font-semibold">上下文区块拆分（占 prompt 比例）</h2>
+          <section className="rounded-xl border border-line/12 bg-surface/50 p-4 shadow-panel">
+            <h2 className="flex items-center gap-2 font-display text-sm font-semibold text-primary">
+              <span className="bookmark-bar h-3.5" aria-hidden />
+              上下文区块拆分（占 prompt 比例）
+            </h2>
             <div className="mt-3 space-y-2.5">
               {sections.map((s) => {
                 const pct = promptTokens > 0 ? Math.min(100, (s.tokens / promptTokens) * 100) : 0;
                 return (
                   <div key={s.key} className="flex items-center gap-3 text-xs">
-                    <span className="w-10 shrink-0 text-slate-500 dark:text-slate-400">{s.label}</span>
-                    <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                      <div className={"h-full rounded-full " + s.color} style={{ width: `${pct}%` }} />
+                    <span className="w-10 shrink-0 text-secondary">{s.label}</span>
+                    <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-line/10">
+                      <div
+                        className={"h-full rounded-full transition-[width] duration-700 ease-brush " + s.color}
+                        style={{ width: `${pct}%` }}
+                      />
                     </div>
-                    <span className="w-24 shrink-0 text-right text-slate-400">
+                    <span className="w-24 shrink-0 text-right font-mono text-muted">
                       {fmt(s.tokens)} · {pct.toFixed(1)}%
                     </span>
                   </div>
@@ -138,10 +151,13 @@ export default function UsagePage(): JSX.Element {
           </section>
 
           {/* 按日趋势 */}
-          <section className="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
-            <h2 className="text-sm font-semibold">按日趋势</h2>
+          <section className="rounded-xl border border-line/12 bg-surface/50 p-4 shadow-panel">
+            <h2 className="flex items-center gap-2 font-display text-sm font-semibold text-primary">
+              <span className="bookmark-bar h-3.5" aria-hidden />
+              按日趋势
+            </h2>
             {summary.by_day.length === 0 ? (
-              <p className="mt-3 py-6 text-center text-xs text-slate-400">窗口内暂无用量数据</p>
+              <p className="mt-3 py-6 text-center font-display text-xs text-muted">窗口内暂无用量数据</p>
             ) : (
               <div className="mt-4 flex h-32 items-end gap-1.5">
                 {summary.by_day.map((d) => {
@@ -149,13 +165,13 @@ export default function UsagePage(): JSX.Element {
                   const height = Math.max(4, (total / maxDayTokens) * 100);
                   return (
                     <div key={d.day} className="flex min-w-0 flex-1 flex-col items-center gap-1">
-                      <span className="text-[9px] text-slate-400">{fmt(total)}</span>
+                      <span className="font-mono text-[9px] text-muted">{fmt(total)}</span>
                       <div
-                        className="w-full rounded-t bg-sky-500/80 transition hover:bg-sky-600"
+                        className="w-full rounded-t bg-accent/75 transition-colors hover:bg-accent"
                         style={{ height: `${height}%` }}
                         title={`${d.day}：prompt ${fmt(d.prompt_tokens)} / completion ${fmt(d.completion_tokens)}`}
                       />
-                      <span className="w-full truncate text-center text-[9px] text-slate-400">
+                      <span className="w-full truncate text-center font-mono text-[9px] text-muted">
                         {d.day.slice(5)}
                       </span>
                     </div>
@@ -178,9 +194,9 @@ export default function UsagePage(): JSX.Element {
  */
 function StatCard({ label, value }: { label: string; value: string }): JSX.Element {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
-      <p className="text-[10px] text-slate-400">{label}</p>
-      <p className="mt-1 text-lg font-semibold tabular-nums">{value}</p>
+    <div className="card-paper rounded-xl p-3">
+      <p className="font-display text-[11px] tracking-wide text-muted">{label}</p>
+      <p className="mt-1 font-mono text-lg font-semibold tabular-nums text-primary">{value}</p>
     </div>
   );
 }

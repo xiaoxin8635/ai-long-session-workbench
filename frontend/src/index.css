@@ -1,4 +1,525 @@
-/** Tailwind CSS 入口（EchoDesk 前端全局样式）。 */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/**
+ * EchoDesk 前端全局样式与设计 token（「宣纸 · 文人书卷山水」古风浅色体系）。
+ *
+ * 分层：
+ *   1. :root          —— 设计 token（RGB 通道值，供 Tailwind <alpha-value> 消费）
+ *   2. @layer base    —— html/body 基座、宣纸氛围背景（水墨晕染 + 纸纹噪点）、滚动条、选区、焦点环
+ *   3. @layer components —— 纸面面板 / 图标 chip / 徽章 / 按钮 / 输入框 / 印章 / 书签 等元件
+ *   4. @layer utilities —— 墨影文字、纸纹底、毛笔高亮、流式光标等原子工具
+ *   5. keyframes      —— 水墨晕染 / 印章按压 / 卷轴展开 / 毛笔扫过 / 上浮入场 等动效
+ *
+ * 色彩一律以「通道三元组」存放（如 --c-accent: 58 107 74），
+ * 使 Tailwind 的 bg-accent/10 之类透明度修饰符可用。
+ * 主色竹青石绿，点缀朱砂印章红；明亮宣纸底 + 墨色字。
+ */
+
+@import "tailwindcss/base";
+@import "tailwindcss/components";
+@import "tailwindcss/utilities";
+
+/* ==========================================================================
+   1. 设计 token —— 宣纸 · 竹青 · 朱砂
+   ========================================================================== */
+:root {
+  /* 宣纸分层背景（base 纸底 → elevated 最亮纸面） */
+  --c-base: 244 237 221;      /* 宣纸 #F4EDDD */
+  --c-surface: 251 246 234;   /* 纸面 #FBF6EA */
+  --c-elevated: 255 252 245;  /* 提亮纸面 #FFFCF5 */
+  --c-surface2: 235 226 206;  /* 沉一档的纸（分隔/悬停底）#EBE2CE */
+
+  /* 墨线（发丝边框，低透明使用） */
+  --c-line: 42 38 32;
+
+  /* 文字三级（墨色） */
+  --c-primary: 42 38 32;      /* 浓墨 #2A2620 */
+  --c-secondary: 92 86 75;    /* 淡墨 #5C564B */
+  --c-muted: 138 130 114;     /* 枯墨 #8A8272 */
+
+  /* 品牌主色：竹青石绿 */
+  --c-accent: 58 107 74;        /* 竹青 #3A6B4A */
+  --c-accent-bright: 92 138 106; /* 石绿亮 #5C8A6A */
+
+  /* 印章点缀：朱砂 */
+  --c-seal: 158 43 37;          /* 朱砂 #9E2B25 */
+
+  /* 语义色（古风口径） */
+  --c-success: 74 124 89;       /* 竹青绿 #4A7C59 */
+  --c-warning: 181 130 46;      /* 赭黄 #B5822E */
+  --c-danger: 158 43 37;        /* 朱砂 #9E2B25 */
+  --c-info: 46 78 126;          /* 黛蓝 #2E4E7E */
+  --c-violet: 109 89 122;       /* 紫棠 #6D597A */
+  --c-teal: 58 125 110;         /* 松石绿 #3A7D6E */
+
+  /* 阴影（暖墨软影，非冷辉光） */
+  --shadow-panel: 0 1px 2px rgb(42 38 32 / 0.05), 0 8px 24px -14px rgb(42 38 32 / 0.28);
+  --shadow-panel-lg: 0 2px 6px rgb(42 38 32 / 0.07), 0 26px 60px -28px rgb(42 38 32 / 0.38);
+  --glow-accent: 0 0 0 1px rgb(var(--c-accent) / 0.22), 0 10px 26px -10px rgb(var(--c-accent) / 0.42);
+
+  color-scheme: light;
+}
+
+/* ==========================================================================
+   2. 基础层
+   ========================================================================== */
+@layer base {
+  * {
+    border-color: rgb(var(--c-line) / 0.1);
+  }
+
+  html {
+    color-scheme: light;
+    background-color: rgb(var(--c-base));
+  }
+
+  body {
+    position: relative;
+    min-height: 100vh;
+    background-color: rgb(var(--c-base));
+    color: rgb(var(--c-primary));
+    font-family: theme("fontFamily.sans");
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* 氛围背景层①：水墨晕染（竹青 + 淡墨 + 朱砂极淡），固定不随滚动 */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(58rem 40rem at 10% -10%, rgb(var(--c-accent) / 0.1), transparent 62%),
+      radial-gradient(46rem 38rem at 100% 4%, rgb(var(--c-info) / 0.07), transparent 58%),
+      radial-gradient(50rem 46rem at 50% 118%, rgb(var(--c-secondary) / 0.07), transparent 62%),
+      radial-gradient(30rem 30rem at 88% 92%, rgb(var(--c-seal) / 0.05), transparent 60%);
+  }
+
+  /* 氛围背景层②：宣纸纤维噪点（暖调 grain），叠加纸质感 */
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.05;
+    mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+  }
+
+  /* 应用内容置于氛围层之上 */
+  #root {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* 选区：竹青淡底 + 墨字 */
+  ::selection {
+    background-color: rgb(var(--c-accent) / 0.22);
+    color: rgb(var(--c-primary));
+  }
+
+  /* 焦点环：竹青可见焦点（无障碍） */
+  :focus-visible {
+    outline: 2px solid rgb(var(--c-accent) / 0.75);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* 滚动条：纤细墨色，悬停转竹青 */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--c-line) / 0.18) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: rgb(var(--c-line) / 0.18);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(var(--c-accent) / 0.5);
+    background-clip: content-box;
+  }
+}
+
+/* ==========================================================================
+   3. 元件层
+   ========================================================================== */
+@layer components {
+  /* 纸面面板：暖白半透 + 背景模糊 + 墨发丝边 + 软影 */
+  .glass {
+    background-color: rgb(var(--c-surface) / 0.82);
+    backdrop-filter: blur(14px) saturate(120%);
+    -webkit-backdrop-filter: blur(14px) saturate(120%);
+    border: 1px solid rgb(var(--c-line) / 0.1);
+    box-shadow: var(--shadow-panel);
+  }
+
+  /* 纸卡：列表/内容卡片基座，悬停轻微上浮 */
+  .card-paper {
+    background-color: rgb(var(--c-surface) / 0.9);
+    border: 1px solid rgb(var(--c-line) / 0.1);
+    box-shadow: 0 1px 2px rgb(42 38 32 / 0.04);
+    transition:
+      transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+      border-color 0.28s ease;
+  }
+  .card-paper:hover {
+    transform: translateY(-2px);
+    border-color: rgb(var(--c-accent) / 0.35);
+    box-shadow: 0 12px 30px -18px rgb(42 38 32 / 0.5);
+  }
+
+  /* 图标 chip：导航/标题前的着色图标容器 */
+  .icon-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.6rem;
+    background-color: rgb(var(--c-line) / 0.05);
+    border: 1px solid rgb(var(--c-line) / 0.09);
+    transition:
+      background-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+      border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+      color 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* 印章：朱砂方形钤印（品牌/确认点缀） */
+  .seal-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.4rem;
+    background-image: linear-gradient(150deg, rgb(178 55 48), rgb(var(--c-seal)));
+    color: rgb(var(--c-surface));
+    box-shadow:
+      inset 0 0 0 1px rgb(255 255 255 / 0.18),
+      0 4px 14px -6px rgb(var(--c-seal) / 0.7);
+    font-family: theme("fontFamily.display");
+    letter-spacing: 0.04em;
+  }
+
+  /* 竹青书签竖条：区块小标题前导 */
+  .bookmark-bar {
+    display: inline-block;
+    width: 0.22rem;
+    border-radius: 999px;
+    background-image: linear-gradient(180deg, rgb(var(--c-accent-bright)), rgb(var(--c-accent)));
+    box-shadow: 0 0 0.5rem rgb(var(--c-accent) / 0.35);
+  }
+
+  /* 徽章基座：胶囊 + 墨发丝环（配色由 data-variant 或内联着色类叠加） */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    border-radius: 999px;
+    padding: 0.125rem 0.55rem;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    line-height: 1.4;
+    letter-spacing: 0.01em;
+    border: 1px solid transparent;
+    white-space: nowrap;
+    transition:
+      background-color 0.2s ease,
+      border-color 0.2s ease,
+      color 0.2s ease;
+  }
+  /* 徽章前导色点 */
+  .badge-dot {
+    width: 0.375rem;
+    height: 0.375rem;
+    border-radius: 999px;
+    background-color: currentColor;
+    box-shadow: 0 0 0.375rem currentColor;
+  }
+
+  /* 主按钮：竹青实心 + 悬停上浮墨影 + 印章按压 */
+  .btn-primary {
+    background-image: linear-gradient(140deg, rgb(var(--c-accent-bright)), rgb(var(--c-accent)));
+    color: rgb(var(--c-elevated));
+    font-weight: 600;
+    box-shadow: 0 6px 18px -10px rgb(var(--c-accent) / 0.85);
+    transition:
+      box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+      transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+      filter 0.2s ease,
+      opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .btn-primary:hover:not(:disabled) {
+    filter: saturate(112%) brightness(1.03);
+    box-shadow: 0 10px 26px -10px rgb(var(--c-accent) / 0.9);
+    transform: translateY(-1px);
+  }
+  .btn-primary:active:not(:disabled) {
+    animation: seal-press 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .btn-primary:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  /* 危险按钮：朱砂实心（软删除/拒绝/删除） */
+  .btn-danger {
+    background-image: linear-gradient(140deg, rgb(178 55 48), rgb(var(--c-seal)));
+    color: rgb(var(--c-elevated));
+    font-weight: 600;
+    box-shadow: 0 6px 18px -10px rgb(var(--c-seal) / 0.8);
+    transition:
+      box-shadow 0.2s ease,
+      transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+      filter 0.2s ease,
+      opacity 0.2s ease;
+  }
+  .btn-danger:hover:not(:disabled) {
+    filter: brightness(1.05);
+    transform: translateY(-1px);
+  }
+  .btn-danger:active:not(:disabled) {
+    animation: seal-press 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .btn-danger:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  /* 次级/幽灵按钮：纸面墨线边，悬停淡竹青水洗 */
+  .btn-ghost {
+    background-color: rgb(var(--c-surface) / 0.7);
+    border: 1px solid rgb(var(--c-line) / 0.12);
+    color: rgb(var(--c-secondary));
+    transition:
+      background-color 0.2s ease,
+      border-color 0.2s ease,
+      color 0.2s ease,
+      opacity 0.2s ease;
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background-color: rgb(var(--c-accent) / 0.09);
+    color: rgb(var(--c-accent));
+    border-color: rgb(var(--c-accent) / 0.35);
+  }
+  .btn-ghost:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  /* 输入框：纸面 + 墨线边 + 聚焦竹青环 */
+  .input {
+    background-color: rgb(var(--c-elevated) / 0.85);
+    border: 1px solid rgb(var(--c-line) / 0.14);
+    color: rgb(var(--c-primary));
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+  }
+  .input::placeholder {
+    color: rgb(var(--c-muted));
+  }
+  .input:focus {
+    outline: none;
+    border-color: rgb(var(--c-accent) / 0.6);
+    box-shadow: 0 0 0 3px rgb(var(--c-accent) / 0.14);
+    background-color: rgb(var(--c-elevated));
+  }
+  .input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* 下划线式输入（登录页「墨线」风）：仅底线，聚焦竹青加粗 */
+  .input-underline {
+    background-color: transparent;
+    border: 0;
+    border-bottom: 1.5px solid rgb(var(--c-line) / 0.24);
+    border-radius: 0;
+    color: rgb(var(--c-primary));
+    transition: border-color 0.25s ease, box-shadow 0.25s ease;
+  }
+  .input-underline::placeholder {
+    color: rgb(var(--c-muted));
+  }
+  .input-underline:focus {
+    outline: none;
+    border-bottom-color: rgb(var(--c-accent));
+    box-shadow: 0 6px 14px -12px rgb(var(--c-accent) / 0.9);
+  }
+}
+
+/* ==========================================================================
+   4. 工具层
+   ========================================================================== */
+@layer utilities {
+  /* 墨影文字（品牌/标题用，替代旧暖金发光） */
+  .text-ink {
+    text-shadow: 0 1px 0 rgb(255 255 255 / 0.5), 0 2px 10px rgb(42 38 32 / 0.12);
+  }
+
+  /* 极淡墨网格底纹（面板/空态背景） */
+  .bg-grid {
+    background-image:
+      linear-gradient(rgb(var(--c-line) / 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(var(--c-line) / 0.035) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+
+  /* 毛笔高亮下划线（激活导航/标题） */
+  .brush-underline {
+    background-image: linear-gradient(
+      90deg,
+      rgb(var(--c-accent) / 0) 0%,
+      rgb(var(--c-accent) / 0.55) 12%,
+      rgb(var(--c-accent) / 0.55) 88%,
+      rgb(var(--c-accent) / 0) 100%
+    );
+    background-repeat: no-repeat;
+    background-position: 0 100%;
+    background-size: 100% 0.16em;
+  }
+
+  /* 流式生成光标（闪烁墨竖条） */
+  .stream-caret::after {
+    content: "";
+    display: inline-block;
+    width: 0.45rem;
+    height: 1.05em;
+    margin-left: 0.15rem;
+    vertical-align: text-bottom;
+    border-radius: 1px;
+    background-color: rgb(var(--c-accent));
+    animation: caret-blink 1s steps(2, start) infinite;
+  }
+
+  /* 入场动效工具类 */
+  .anim-ink-diffuse {
+    animation: ink-diffuse 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .anim-rise-in {
+    animation: rise-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+}
+
+/* ==========================================================================
+   5. 关键帧（供 Tailwind animation 与原生 class 共用）
+   ========================================================================== */
+@keyframes caret-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+/* 水墨晕染入场：模糊 + 缩放 + 淡入 */
+@keyframes ink-diffuse {
+  0% {
+    opacity: 0;
+    filter: blur(6px);
+    transform: scale(0.985);
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0);
+    transform: scale(1);
+  }
+}
+
+/* 印章按压：按下钤印的回弹 */
+@keyframes seal-press {
+  0% {
+    transform: translateY(-1px) scale(1);
+  }
+  45% {
+    transform: translateY(0) scale(0.94);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* 卷轴展开：自顶部展开 */
+@keyframes scroll-unfurl {
+  0% {
+    opacity: 0;
+    transform: scaleY(0.9) translateY(-12px);
+    transform-origin: top;
+  }
+  100% {
+    opacity: 1;
+    transform: scaleY(1) translateY(0);
+    transform-origin: top;
+  }
+}
+
+/* 毛笔扫过：横向渐变掠过 */
+@keyframes brush-sweep {
+  0% {
+    background-position: -120% 0;
+  }
+  100% {
+    background-position: 220% 0;
+  }
+}
+
+/* 上浮入场：列表卡片 stagger 用 */
+@keyframes rise-in {
+  0% {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 墨滴涟漪：加载态 */
+@keyframes ink-drop {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+@keyframes brand-breathe {
+  0%,
+  100% {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+}
+
+/* 尊重「减少动态效果」偏好：关闭装饰性动画 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .stream-caret::after {
+    animation: none;
+    opacity: 1;
+  }
+}

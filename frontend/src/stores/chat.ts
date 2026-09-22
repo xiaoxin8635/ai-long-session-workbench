@@ -51,6 +51,10 @@ interface ChatState {
   startDraft: () => void;
   /** 发送消息（流式）。 */
   sendMessage: (content: string) => Promise<void>;
+  /** 停止当前流式生成（中断 SSE，保留已到达的部分正文）。 */
+  stopStreaming: () => void;
+  /** 重新生成最后一条助手回答（丢弃旧答复，重跑同一轮用户消息）。 */
+  regenerate: () => Promise<void>;
   /** 裁决当前挂起的 external 工具调用并续传回答（SSE）。 */
   resumeToolCall: (approve: boolean) => Promise<void>;
   /** 重命名会话。 */
@@ -61,6 +65,14 @@ interface ChatState {
 
 /** 前端本地消息自增键。 */
 let localKeySeq = 0;
+
+/** 当前流式请求的中断控制器（「停止生成」用；无进行中为 null）。 */
+let activeController: AbortController | null = null;
+
+/** 判定是否为用户主动中断（fetch abort 抛 DOMException AbortError）。 */
+function isAbortError(err: unknown): boolean {
+  return err instanceof DOMException && err.name === "AbortError";
+}
 
 export const useChatStore = create<ChatState>()((set, get) => ({
   workspaceId: null,
@@ -117,85 +129,32 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   },
 
   sendMessage: async (content) => {
-    const { workspaceId, activeSessionId, streaming } = get();
-    if (!workspaceId || streaming || content.trim() === "") {
+    await runTurn(content, true);
+  },
+
+  stopStreaming: () => {
+    if (activeController !== null) {
+      activeController.abort();
+    }
+  },
+
+  regenerate: async () => {
+    const { messages, streaming } = get();
+    if (streaming) {
       return;
     }
-    const userMsg: ChatMessage = { key: `local-${(localKeySeq += 1)}`, role: "user", content };
-    const assistantKey = `local-${(localKeySeq += 1)}`;
-    const assistantMsg: ChatMessage = { key: assistantKey, role: "assistant", content: "" };
-    set({ streaming: true, error: null, messages: [...get().messages, userMsg, assistantMsg] });
-
-    // 就地更新流式中的 assistant 占位
-    const appendDelta = (text: string): void => {
-      const msgs = get().messages;
-      const idx = msgs.findIndex((m) => m.key === assistantKey);
-      if (idx === -1) {
-        return;
+    // 找最后一条用户消息，以其为错重跑（runTurn 内部会截断其后的旧助手回复）
+    let lastUserContent: string | null = null;
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i]!.role === "user") {
+        lastUserContent = messages[i]!.content;
+        break;
       }
-      const updated = [...msgs];
-      updated[idx] = { ...updated[idx], content: updated[idx].content + text };
-      set({ messages: updated });
-    };
-    const markFailed = (): void => {
-      const msgs = get().messages;
-      const idx = msgs.findIndex((m) => m.key === assistantKey);
-      if (idx !== -1) {
-        const updated = [...msgs];
-        updated[idx] = { ...updated[idx], failed: true };
-        set({ messages: updated });
-      }
-    };
-
-    try {
-      await chatApi.streamChat({
-        workspaceId,
-        sessionId: activeSessionId ?? undefined,
-        content,
-        handlers: {
-          onSessionId: (sessionId) => {
-            if (get().activeSessionId !== sessionId) {
-              set({ activeSessionId: sessionId });
-              void refreshSessions();
-            }
-          },
-          onDelta: appendDelta,
-          onToolCall: (toolCall) => {
-            // external 确认请求挂在当前助手消息上（气泡内渲染确认卡片）
-            const msgs = get().messages;
-            const idx = msgs.findIndex((m) => m.key === assistantKey);
-            if (idx !== -1) {
-              const updated = [...msgs];
-              updated[idx] = { ...updated[idx], toolCall };
-              set({ messages: updated });
-            }
-          },
-          onError: (message) => {
-            set({ error: message });
-            markFailed();
-          },
-          onFinish: ({ citations }) => {
-            if (citations.length === 0) {
-              return;
-            }
-            const msgs = get().messages;
-            const idx = msgs.findIndex((m) => m.key === assistantKey);
-            if (idx !== -1) {
-              const updated = [...msgs];
-              updated[idx] = { ...updated[idx], citations };
-              set({ messages: updated });
-            }
-          },
-        },
-      });
-      // 流结束后刷新会话列表（token_total/last_message_at/摘要标题更新）
-      await refreshSessions();
-    } catch (err) {
-      set({ error: errorMessage(err) });
-      markFailed();
-    } finally {
-      set({ streaming: false });
     }
+    if (lastUserContent === null) {
+      return;
+    }
+    await runTurn(lastUserContent, false);
   },
 
   resumeToolCall: async (approve) => {
@@ -291,4 +250,110 @@ async function refreshSessions(): Promise<void> {
   }
   const page = await sessionsApi.listSessions(wsId);
   useChatStore.setState({ sessions: page.items });
+}
+
+/**
+ * 流式一轮回答的共享内核（sendMessage 追加用户消息 / regenerate 重跑共用）。
+ *
+ * @param content - 本轮用户消息文本。
+ * @param appendUser - true 追加新的用户气泡（首次发送）；false 仅截断到最后一条
+ *   用户消息后重跑助手回答（重新生成）。
+ */
+async function runTurn(content: string, appendUser: boolean): Promise<void> {
+  const get = useChatStore.getState;
+  const set = useChatStore.setState;
+  const { workspaceId, activeSessionId, streaming } = get();
+  if (workspaceId === null || streaming) {
+    return;
+  }
+  if (appendUser && content.trim() === "") {
+    return;
+  }
+
+  let baseMessages = get().messages;
+  if (!appendUser) {
+    // 重新生成：截断到最后一条用户消息（含），丢弃其后旧助手回复
+    let lastUser = -1;
+    for (let i = baseMessages.length - 1; i >= 0; i -= 1) {
+      if (baseMessages[i]!.role === "user") {
+        lastUser = i;
+        break;
+      }
+    }
+    if (lastUser === -1) {
+      return;
+    }
+    baseMessages = baseMessages.slice(0, lastUser + 1);
+  }
+
+  const nextMessages: ChatMessage[] = appendUser
+    ? [
+        ...baseMessages,
+        { key: `local-${(localKeySeq += 1)}`, role: "user", content },
+        { key: `local-${(localKeySeq += 1)}`, role: "assistant", content: "" },
+      ]
+    : [...baseMessages, { key: `local-${(localKeySeq += 1)}`, role: "assistant", content: "" }];
+  const assistantKey = nextMessages[nextMessages.length - 1]!.key;
+  set({ streaming: true, error: null, messages: nextMessages });
+
+  // 就地更新流式中的 assistant 占位
+  const patchAssistant = (patch: (m: ChatMessage) => ChatMessage): void => {
+    const msgs = get().messages;
+    const idx = msgs.findIndex((m) => m.key === assistantKey);
+    if (idx !== -1) {
+      const updated = [...msgs];
+      updated[idx] = patch(updated[idx]!);
+      set({ messages: updated });
+    }
+  };
+  const appendDelta = (text: string): void => {
+    patchAssistant((m) => ({ ...m, content: m.content + text }));
+  };
+  const markFailed = (): void => {
+    patchAssistant((m) => ({ ...m, failed: true }));
+  };
+
+  const controller = new AbortController();
+  activeController = controller;
+  try {
+    await chatApi.streamChat({
+      workspaceId,
+      sessionId: activeSessionId ?? undefined,
+      content,
+      signal: controller.signal,
+      handlers: {
+        onSessionId: (sessionId) => {
+          if (get().activeSessionId !== sessionId) {
+            set({ activeSessionId: sessionId });
+            void refreshSessions();
+          }
+        },
+        onDelta: appendDelta,
+        onToolCall: (toolCall) => {
+          patchAssistant((m) => ({ ...m, toolCall }));
+        },
+        onError: (message) => {
+          set({ error: message });
+          markFailed();
+        },
+        onFinish: ({ citations }) => {
+          if (citations.length === 0) {
+            return;
+          }
+          patchAssistant((m) => ({ ...m, citations }));
+        },
+      },
+    });
+    // 流结束后刷新会话列表（token_total/last_message_at/摘要标题更新）
+    await refreshSessions();
+  } catch (err) {
+    if (!isAbortError(err)) {
+      set({ error: errorMessage(err) });
+      markFailed();
+    }
+    // 用户主动停止：保留已到达的部分正文，不标记失败、不弹错误
+  } finally {
+    activeController = null;
+    set({ streaming: false });
+  }
 }

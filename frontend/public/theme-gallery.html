@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>EchoDesk · 配色方案选型</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=JetBrains+Mono:wght@400;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet" />
+<style>
+  /* ---------- 页面外壳(中性,衬托各方案) ---------- */
+  * { box-sizing: border-box; }
+  :root {
+    --page-bg: #0c0c0f;
+    --page-fg: #e8e8ec;
+    --page-dim: #8a8a94;
+    --font-display: "Bricolage Grotesque", "Noto Sans SC", sans-serif;
+    --font-body: "Noto Sans SC", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", monospace;
+  }
+  body {
+    margin: 0; background: var(--page-bg); color: var(--page-fg);
+    font-family: var(--font-body); -webkit-font-smoothing: antialiased;
+    background-image:
+      radial-gradient(900px 500px at 15% -10%, rgba(255,255,255,.05), transparent 60%),
+      radial-gradient(700px 500px at 100% 0%, rgba(120,140,255,.06), transparent 55%);
+  }
+  .page-head { max-width: 1240px; margin: 0 auto; padding: 48px 28px 8px; }
+  .page-head .kicker { font-family: var(--font-mono); font-size: 12px; letter-spacing: .28em; text-transform: uppercase; color: var(--page-dim); }
+  .page-head h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(30px, 5vw, 52px); margin: 10px 0 12px; letter-spacing: -.02em; line-height: 1.05; }
+  .page-head p { color: var(--page-dim); max-width: 62ch; line-height: 1.7; font-size: 15px; margin: 0; }
+  .gallery { max-width: 1240px; margin: 0 auto; padding: 32px 28px 80px; display: flex; flex-direction: column; gap: 40px; }
+
+  .scheme { border-radius: 22px; padding: 22px; background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.015)); border: 1px solid rgba(255,255,255,.08); }
+  .scheme-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 18px; }
+  .scheme-head .idx { font-family: var(--font-mono); font-size: 12px; color: var(--page-dim); letter-spacing: .2em; }
+  .scheme-head h2 { font-family: var(--font-display); font-size: 26px; font-weight: 700; margin: 6px 0 6px; letter-spacing: -.01em; }
+  .scheme-head .desc { color: var(--page-dim); font-size: 14px; line-height: 1.6; max-width: 60ch; margin: 0; }
+  .tags { display: flex; gap: 6px; flex-wrap: wrap; }
+  .tags span { font-family: var(--font-mono); font-size: 11px; padding: 4px 10px; border-radius: 999px; color: var(--page-fg); background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.1); }
+
+  /* ---------- 样张窗口(组件用 var(),颜色随 .scheme 内联变量切换) ---------- */
+  .win { display: grid; grid-template-columns: 210px 1fr; border-radius: 18px; overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--c-line) 12%, transparent);
+    box-shadow: 0 30px 70px -30px rgba(0,0,0,.75); background: var(--c-base); }
+
+  .side { padding: 16px 14px; display: flex; flex-direction: column; gap: 16px;
+    background: color-mix(in srgb, var(--c-elevated) 82%, transparent);
+    border-right: 1px solid color-mix(in srgb, var(--c-line) 9%, transparent); }
+  .brand { display: flex; align-items: center; gap: 9px; font-family: var(--font-display); font-weight: 700; color: var(--c-primary); font-size: 15px; }
+  .brand .logo { width: 26px; height: 26px; border-radius: 8px; background: linear-gradient(135deg, var(--c-accent-bright), var(--c-accent)); box-shadow: 0 0 16px color-mix(in srgb, var(--c-accent) 55%, transparent); }
+  .nav { display: flex; flex-direction: column; gap: 3px; }
+  .nav a { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border-radius: 10px; color: var(--c-secondary); font-size: 13.5px; position: relative; text-decoration: none; }
+  .nav a .ico { width: 18px; height: 18px; border-radius: 6px; display: grid; place-items: center; font-size: 10px; background: color-mix(in srgb, var(--c-line) 12%, transparent); color: var(--c-muted); }
+  .nav a.active { color: var(--c-primary); background: color-mix(in srgb, var(--c-accent) 13%, transparent); font-weight: 500; }
+  .nav a.active .ico { background: color-mix(in srgb, var(--c-accent) 26%, transparent); color: var(--c-accent); }
+  .nav a.active::before { content: ""; position: absolute; left: -14px; top: 9px; bottom: 9px; width: 3px; border-radius: 0 3px 3px 0; background: var(--c-accent); }
+  .user { margin-top: auto; display: flex; align-items: center; gap: 9px; padding: 9px; border-radius: 12px; background: color-mix(in srgb, var(--c-surface) 65%, transparent); }
+  .user .av { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, var(--c-accent), var(--c-info)); }
+  .user .meta { line-height: 1.25; }
+  .user .meta b { color: var(--c-primary); font-size: 12.5px; font-weight: 600; }
+  .user .meta small { color: var(--c-muted); font-size: 11px; font-family: var(--font-mono); }
+
+  .main { padding: 18px; display: flex; flex-direction: column; gap: 15px;
+    background:
+      radial-gradient(700px 320px at 88% -12%, color-mix(in srgb, var(--c-accent) 12%, transparent), transparent 62%),
+      var(--c-base); }
+  .main-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .main-head h3 { font-family: var(--font-display); color: var(--c-primary); font-size: 18px; margin: 0; font-weight: 700; }
+  .main-head .sub { color: var(--c-muted); font-size: 12px; font-family: var(--font-mono); }
+
+  .badges { display: flex; flex-wrap: wrap; gap: 7px; }
+  .badge { font-size: 11.5px; font-weight: 600; padding: 4px 10px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid; }
+  .badge i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; display: inline-block; }
+  .b-accent { color: var(--c-accent); background: color-mix(in srgb, var(--c-accent) 13%, transparent); border-color: color-mix(in srgb, var(--c-accent) 30%, transparent); }
+  .b-info { color: var(--c-info); background: color-mix(in srgb, var(--c-info) 13%, transparent); border-color: color-mix(in srgb, var(--c-info) 30%, transparent); }
+  .b-success { color: var(--c-success); background: color-mix(in srgb, var(--c-success) 13%, transparent); border-color: color-mix(in srgb, var(--c-success) 30%, transparent); }
+  .b-warning { color: var(--c-warning); background: color-mix(in srgb, var(--c-warning) 13%, transparent); border-color: color-mix(in srgb, var(--c-warning) 30%, transparent); }
+  .b-danger { color: var(--c-danger); background: color-mix(in srgb, var(--c-danger) 13%, transparent); border-color: color-mix(in srgb, var(--c-danger) 30%, transparent); }
+  .b-neutral { color: var(--c-secondary); background: color-mix(in srgb, var(--c-line) 8%, transparent); border-color: color-mix(in srgb, var(--c-line) 14%, transparent); }
+
+  .grid2 { display: grid; grid-template-columns: 1.15fr .85fr; gap: 14px; }
+  .card { background: color-mix(in srgb, var(--c-surface) 72%, transparent); border: 1px solid color-mix(in srgb, var(--c-line) 9%, transparent); border-radius: 14px; padding: 14px; }
+  .card .ct { color: var(--c-secondary); font-size: 12px; margin-bottom: 10px; display: flex; align-items: center; gap: 7px; }
+  .card .ct b { color: var(--c-primary); font-weight: 600; }
+  .bar { height: 8px; border-radius: 99px; background: color-mix(in srgb, var(--c-line) 12%, transparent); overflow: hidden; }
+  .bar > span { display: block; height: 100%; width: 62%; border-radius: 99px; background: linear-gradient(90deg, var(--c-accent), var(--c-accent-bright)); }
+  .rows { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .row { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--c-secondary); }
+  .row .v { font-family: var(--font-mono); color: var(--c-primary); }
+  .stat { font-family: var(--font-mono); font-size: 30px; font-weight: 600; color: var(--c-primary); line-height: 1; }
+  .stat small { font-size: 12px; color: var(--c-muted); font-weight: 400; }
+
+  .chat { display: flex; flex-direction: column; gap: 10px; }
+  .msg { max-width: 82%; padding: 10px 13px; border-radius: 14px; font-size: 13px; line-height: 1.6; }
+  .msg.user { align-self: flex-end; color: var(--c-base); background: linear-gradient(135deg, var(--c-accent-bright), var(--c-accent)); border-bottom-right-radius: 5px; font-weight: 500; }
+  .msg.bot { align-self: flex-start; color: var(--c-primary); background: color-mix(in srgb, var(--c-surface) 85%, transparent); border: 1px solid color-mix(in srgb, var(--c-line) 9%, transparent); border-bottom-left-radius: 5px; }
+  .cite { display: inline-flex; align-items: center; gap: 5px; margin-top: 8px; font-size: 11px; padding: 3px 8px; border-radius: 7px; color: var(--c-info); background: color-mix(in srgb, var(--c-info) 12%, transparent); }
+
+  .composer { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px;
+    background: color-mix(in srgb, var(--c-elevated) 70%, transparent);
+    border: 1px solid color-mix(in srgb, var(--c-accent) 32%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-accent) 10%, transparent); }
+  .composer .ph { flex: 1; color: var(--c-muted); font-size: 13px; }
+  .btn { font-size: 12.5px; font-weight: 600; padding: 8px 15px; border-radius: 10px; border: 1px solid transparent; cursor: pointer; font-family: var(--font-body); }
+  .btn-primary { color: var(--c-base); background: linear-gradient(135deg, var(--c-accent-bright), var(--c-accent)); box-shadow: 0 6px 18px -6px color-mix(in srgb, var(--c-accent) 70%, transparent); }
+  .btn-ghost { color: var(--c-secondary); background: color-mix(in srgb, var(--c-line) 7%, transparent); border-color: color-mix(in srgb, var(--c-line) 14%, transparent); }
+
+  /* ---------- 色板 ---------- */
+  .swatches { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  .sw { display: flex; align-items: center; gap: 8px; padding: 6px 11px 6px 6px; border-radius: 10px; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08); }
+  .sw .chip { width: 26px; height: 26px; border-radius: 7px; border: 1px solid rgba(255,255,255,.18); }
+  .sw .lb { font-size: 11px; color: var(--page-dim); line-height: 1.3; }
+  .sw .lb b { display: block; color: var(--page-fg); font-family: var(--font-mono); font-size: 11px; font-weight: 600; }
+
+  .foot { max-width: 1240px; margin: 0 auto; padding: 0 28px 70px; color: var(--page-dim); font-size: 13px; line-height: 1.7; }
+  .foot code { font-family: var(--font-mono); color: var(--page-fg); background: rgba(255,255,255,.07); padding: 2px 7px; border-radius: 6px; }
+  @media (max-width: 720px) { .win { grid-template-columns: 1fr; } .side { display: none; } .grid2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+  <div class="page-head">
+    <div class="kicker">EchoDesk · Theme Direction</div>
+    <h1>五套配色方案 · 选型画廊</h1>
+    <p>下方每套方案都用真实界面样张呈现(侧栏导航、徽章、预算卡、聊天气泡、聚焦输入框、主/次按钮),并附完整色板。挑一套告诉我编号,我会把它的色值移植进 <code style="font-family:var(--font-mono)">index.css</code> 的设计 token,再按你的反馈微调浓度、明暗与信号色。</p>
+  </div>
+
+  <div class="gallery" id="gallery"></div>
+
+  <div class="foot">
+    提示:样张里的强调色滑块、发光、聚焦环都用 <code>color-mix()</code> 从信号色自动派生,所以换主色时全套状态色会协调联动 —— 选定后微调整体成本很低。当前线上方案是「暖金 Amber + 深蓝黑」(不在下列五套内),如果只是想调它的浓淡也可以直接说。
+  </div>
+
+  <!-- 样张模板(被 JS 克隆进每套方案,颜色由各自内联 CSS 变量驱动) -->
+  <template id="mockup">
+    <div class="win">
+      <aside class="side">
+        <div class="brand"><span class="logo"></span> EchoDesk</div>
+        <nav class="nav">
+          <a class="active"><span class="ico">💬</span> 对话</a>
+          <a><span class="ico">🧠</span> 记忆</a>
+          <a><span class="ico">📚</span> 知识库</a>
+          <a><span class="ico">🛠</span> 工具</a>
+          <a><span class="ico">📊</span> 用量</a>
+        </nav>
+        <div class="user"><span class="av"></span><span class="meta"><b>陈琦勇</b><br /><small>@qiyong</small></span></div>
+      </aside>
+      <div class="main">
+        <div class="main-head"><h3>上下文装配</h3><span class="sub">session · 4k window</span></div>
+        <div class="badges">
+          <span class="badge b-accent"><i></i>强调</span>
+          <span class="badge b-info"><i></i>引用</span>
+          <span class="badge b-success"><i></i>只读</span>
+          <span class="badge b-warning"><i></i>写入</span>
+          <span class="badge b-danger"><i></i>外部</span>
+          <span class="badge b-neutral"><i></i>中性</span>
+        </div>
+        <div class="grid2">
+          <div class="card">
+            <div class="ct"><b>Token 预算</b> · default profile</div>
+            <div class="bar"><span></span></div>
+            <div class="rows">
+              <div class="row"><span>系统合成</span><span class="v">133</span></div>
+              <div class="row"><span>知识检索</span><span class="v">266</span></div>
+              <div class="row"><span>工作记忆</span><span class="v">133</span></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="ct"><b>本装配</b></div>
+            <div class="stat">266<small> / 3600 tok</small></div>
+            <div class="rows"><div class="row"><span>命中记忆</span><span class="v">6</span></div><div class="row"><span>裁剪</span><span class="v">0</span></div></div>
+          </div>
+        </div>
+        <div class="chat">
+          <div class="msg user">帮我总结这个项目的记忆架构</div>
+          <div class="msg bot">EchoDesk 采用四层记忆模型:工作记忆(Redis 窗口)、情景(会话摘要)、语义(事实)、程序(偏好流程)。<span class="cite">📎 docs/06 · 记忆规格</span></div>
+        </div>
+        <div class="composer"><span class="ph">输入消息,聚焦时边框发光…</span><button class="btn btn-ghost">预览</button><button class="btn btn-primary">发送</button></div>
+      </div>
+    </div>
+  </template>
+
+<script>
+  const SCHEMES = [
+    {
+      id: "arctic", name: "Arctic Slate · 冷冽石板", idx: "方案 01",
+      desc: "冷调蓝灰深色底 + 冰蓝信号色。克制、精密、工程感强,长时间盯屏不刺眼。适合把 EchoDesk 定位成「专业记忆控制台」。",
+      tags: ["深色", "冷调", "科技", "克制"],
+      v: { base:"#0A0E14", elevated:"#101720", surface:"#141C26", surface2:"#1D2733", line:"#FFFFFF", primary:"#E6EDF5", secondary:"#A3B2C4", muted:"#64748B", accent:"#4CC9E8", accentBright:"#82E6F8", success:"#3DD68C", warning:"#E8B84B", danger:"#F2555A", info:"#5AA9F7" }
+    },
+    {
+      id: "clay", name: "Paper & Clay · 暖纸陶土", idx: "方案 02",
+      desc: "浅色暖纸底 + 陶土橘信号色 + 墨黑文字。编辑/杂志质感,明亮通透,和现在的深色完全相反的走向。适合想要「轻盈、亲和、有纸感」的观感。",
+      tags: ["浅色", "暖调", "编辑感", "通透"],
+      v: { base:"#F3EDE3", elevated:"#FBF7F0", surface:"#FFFDF8", surface2:"#EDE4D6", line:"#2A231B", primary:"#2A231B", secondary:"#6B5E4F", muted:"#9A8B78", accent:"#C15F3C", accentBright:"#D9815C", success:"#4F8A5B", warning:"#C08A2A", danger:"#BE4638", info:"#4A7FA5" }
+    },
+    {
+      id: "jade", name: "Deep Jade · 墨玉翡翠", idx: "方案 03",
+      desc: "墨绿黑底 + 翡翠绿信号色 + 黄铜点缀。沉稳、有机、带一点东方奢华感。翡翠绿作为「记忆/生长」的隐喻很贴合产品叙事。",
+      tags: ["深色", "绿调", "沉稳", "有机"],
+      v: { base:"#06100C", elevated:"#0B1712", surface:"#0F1E17", surface2:"#16291F", line:"#FFFFFF", primary:"#E4F0E8", secondary:"#9FB8A9", muted:"#5F7A6A", accent:"#37D399", accentBright:"#6BF0BC", success:"#37D399", warning:"#D9A441", danger:"#E8615A", info:"#4FB9D9" }
+    },
+    {
+      id: "graphite", name: "Graphite Lime · 石墨荧光", idx: "方案 04",
+      desc: "中性石墨黑底 + 电光柠檬绿信号色。高对比、极简、带点粗野主义/终端极客味。荧光绿只用在关键动作与激活态,克制而醒目。",
+      tags: ["深色", "中性", "高对比", "极客"],
+      v: { base:"#0C0C0E", elevated:"#121215", surface:"#16161A", surface2:"#1E1E24", line:"#FFFFFF", primary:"#ECECEF", secondary:"#A0A0A8", muted:"#66666E", accent:"#C8F751", accentBright:"#DEFF8A", success:"#7BE07B", warning:"#F5C451", danger:"#FF6B6B", info:"#6BCBFF" }
+    },
+    {
+      id: "rose", name: "Dusk Rose · 暮色玫瑰", idx: "方案 05",
+      desc: "暖梅紫黑底 + 玫瑰粉信号色。深色但比现在的暖金更柔、更时髦,带一点温度与精致感。适合想要「深色但不冷、有辨识度」的路线。",
+      tags: ["深色", "暖调", "柔和", "时髦"],
+      v: { base:"#130E11", elevated:"#1A1317", surface:"#20171C", surface2:"#2A1E24", line:"#FFFFFF", primary:"#F5E9EC", secondary:"#C0A6AE", muted:"#8A6E77", accent:"#F2789F", accentBright:"#FF9EBB", success:"#5FD39B", warning:"#E8B15C", danger:"#F0566B", info:"#8B9CF5" }
+    }
+  ];
+
+  const VARMAP = { base:"--c-base", elevated:"--c-elevated", surface:"--c-surface", surface2:"--c-surface2", line:"--c-line", primary:"--c-primary", secondary:"--c-secondary", muted:"--c-muted", accent:"--c-accent", accentBright:"--c-accent-bright", success:"--c-success", warning:"--c-warning", danger:"--c-danger", info:"--c-info" };
+  const SWLABEL = [["base","底"],["elevated","浮起"],["surface","面"],["surface2","面2"],["primary","主文字"],["secondary","次文字"],["muted","弱文字"],["accent","信号色"],["accentBright","信号亮"],["success","成功"],["warning","警告"],["danger","危险"],["info","信息"]];
+
+  const gallery = document.getElementById("gallery");
+  const tpl = document.getElementById("mockup");
+  SCHEMES.forEach((s) => {
+    const sec = document.createElement("section");
+    sec.className = "scheme";
+    // 将色值写入本 section 的 CSS 变量(样张组件全部 var() 引用)
+    Object.entries(s.v).forEach(([k, val]) => sec.style.setProperty(VARMAP[k], val));
+
+    const head = document.createElement("div");
+    head.className = "scheme-head";
+    head.innerHTML = `<div><div class="idx">${s.idx}</div><h2>${s.name}</h2><p class="desc">${s.desc}</p></div>
+      <div class="tags">${s.tags.map((t) => `<span>${t}</span>`).join("")}</div>`;
+    sec.appendChild(head);
+    sec.appendChild(tpl.content.cloneNode(true));
+
+    const sw = document.createElement("div");
+    sw.className = "swatches";
+    sw.innerHTML = SWLABEL.map(([k, lb]) => `<div class="sw"><span class="chip" style="background:${s.v[k]}"></span><span class="lb">${lb}<b>${s.v[k]}</b></span></div>`).join("");
+    sec.appendChild(sw);
+    gallery.appendChild(sec);
+  });
+</script>
+</body>
+</html>
