@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     embedding_dim: int = 1024  # bge-m3 dense 维度（与模型解耦的部署约定）
 
     # ---- Rerank（M-07 RAG 精排；infinity /rerank，不可用降级 RRF 直排）----
+    # 开关：bge-reranker-large（560M）在纯 CPU 上对多文档单次推理 20~90s，
+    # 本地部署不可用——置 false 时 get_rerank_client() 抛 RerankError，检索
+    # 恒降级 RRF 融合直排（零延迟惩罚）；GPU 环境置 true 启用精排。
+    rerank_enabled: bool = True
     rerank_base_url: str | None = None  # None 时复用 embedding_base_url
     rerank_model: str = "BAAI/bge-reranker-large"  # infinity 注册名（路径式名会被 400 拒绝）
     rerank_timeout_seconds: float = 30.0

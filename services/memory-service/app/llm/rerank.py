@@ -100,11 +100,15 @@ def get_rerank_client() -> RerankClient:
     """返回进程级 Rerank 客户端（base_url 默认复用 embedding 服务）。
 
     Raises:
-        RerankError: embedding 与 rerank 均未配置（调用方降级 RRF 直排）。
+        RerankError: rerank 被显式禁用（rerank_enabled=false），或 embedding
+            与 rerank 均未配置——两种情况调用方均降级 RRF 直排。
     """
     global _rerank_client
+    settings = get_settings()
+    if not settings.rerank_enabled:
+        # 本地 CPU 部署 bge-reranker-large 单请求 20~90s 不可用，显式关闭避免白等超时
+        raise RerankError("Rerank 已禁用（MEMORY_SERVICE_RERANK_ENABLED=false），降级 RRF 直排")
     if _rerank_client is None:
-        settings = get_settings()
         base_url = settings.rerank_base_url or settings.embedding_base_url
         if not base_url:
             raise RerankError("Rerank 未配置（EMBEDDING_BASE_URL / RERANK_BASE_URL 均为空）")

@@ -6,8 +6,10 @@
   - 不在此处放置任何业务逻辑
 """
 
+import asyncio
+import logging
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -30,8 +32,50 @@ from app.core.config import get_settings
 from app.core.errors import AppError, app_error_handler
 from app.core.logging import setup_logging
 from app.core.middleware import TraceIDMiddleware
+from app.llm.embeddings import EmbeddingError, get_embedding_client
+from app.llm.rerank import RerankError, get_rerank_client
 from app.observability.tracing import shutdown_flush
 from app.tools.mcp_client import connect_mcp_tools, disconnect_mcp_tools
+
+logger = logging.getLogger(__name__)
+
+# 预热重试次数与间隔：embedding 容器可能晚于本服务就绪，退避重试等待其可用
+_WARMUP_MAX_ATTEMPTS = 6
+_WARMUP_RETRY_SECONDS = 3.0
+
+
+async def _warmup_models() -> None:
+    """后台预热 embedding/rerank 模型，消除冷启动首次推理尖峰。
+
+    背景：infinity（CPU）冷启动首次推理可达 ~10s，会顶穿前端超时导致
+    “请求超时”。启动后台预热打一次 dummy 请求让模型常驻内存，首个真实
+    请求即走热态（实测预热后装配预览 ~0.6s）。降级契约与 MCP/checkpoint
+    一致：embedding 未配置则整体跳过，任何失败仅记日志、绝不阻塞启动。
+    """
+    try:
+        embedding = get_embedding_client()
+    except EmbeddingError:
+        logger.info("model_warmup_skipped embedding 未配置")
+        return
+
+    for attempt in range(_WARMUP_MAX_ATTEMPTS):
+        try:
+            await embedding.embed(["预热"])
+        except EmbeddingError:
+            await asyncio.sleep(_WARMUP_RETRY_SECONDS)  # embedding 服务可能晚就绪
+        else:
+            logger.info("model_warmup_embedding_done attempt=%d", attempt)
+            break
+    else:
+        logger.warning("model_warmup_embedding_skipped 重试耗尽，首次请求可能较慢")
+        return
+
+    # rerank 预热（可选增强项，未配置/失败均忽略，不影响 embedding 预热成果）
+    try:
+        await get_rerank_client().rerank("预热", ["甲", "乙"])
+        logger.info("model_warmup_rerank_done")
+    except RerankError:
+        logger.info("model_warmup_rerank_skipped rerank 未配置或不可用")
 
 
 @asynccontextmanager
@@ -47,7 +91,12 @@ async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
     """
     await get_agent_runtime().start()
     await connect_mcp_tools(get_settings())
+    # 后台预热推理模型（不阻塞启动/健康检查）；shutdown 时取消未完成任务
+    warmup_task = asyncio.create_task(_warmup_models())
     yield
+    warmup_task.cancel()
+    with suppress(asyncio.CancelledError):
+        await warmup_task
     await disconnect_mcp_tools()
     await get_agent_runtime().close()
     shutdown_flush()

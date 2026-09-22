@@ -69,6 +69,10 @@ services:
       # infinity 会规范化注册为 basename（/data/BAAI/bge-m3 → BAAI/bge-m3），
       # 用路径请求会 400（曾导致向量路静默降级为 BM25-only）
       MEMORY_SERVICE_EMBEDDING_MODEL: ${EMBEDDING_MODEL:-BAAI/bge-m3}
+      # Rerank 精排开关（M-07）：bge-reranker-large 在纯 CPU 上单请求 20~90s 不可用，
+      # 本地默认关闭 → 知识检索降级 RRF 融合直排（质量损失小、响应即时）。
+      # GPU 环境在 deploy/.env 设 RERANK_ENABLED=true 启用精排。
+      MEMORY_SERVICE_RERANK_ENABLED: ${RERANK_ENABLED:-false}
       # 上下文预算 profile 目录（M-05）：容器内固定挂载于 /app/config/budgets
       MEMORY_SERVICE_BUDGET_CONFIG_DIR: /app/config/budgets
       # 价目表目录（M-12 cost_usd 折算）：容器内固定挂载于 /app/config
