@@ -16,19 +16,7 @@
 
 ## 系统架构（概览）
 
-```mermaid
-flowchart LR
-    UI[EchoDesk 前端<br/>React SPA · Nginx 托管] -->|同源反代 OpenAI-compatible| SVC[memory-service · FastAPI<br/>自研核心]
-    SVC --> MEM[Memory Manager<br/>四层记忆]
-    SVC --> CTX[Context Builder<br/>token 预算组装]
-    SVC --> RAG[知识库管线]
-    SVC --> AGENT[LangGraph Agent]
-    AGENT --> TOOL[MCP Tools]
-    MEM --> PG[(PostgreSQL)]
-    MEM --> VDB[(pgvector)]
-    CTX --> LLM[LLM]
-    SVC --> LF[Langfuse 观测]
-```
+![系统架构概览](docs/images/00-architecture.svg)
 
 完整架构图与模块设计见 [docs/01-项目开发内容与实现方案.md](docs/01-项目开发内容与实现方案.md)。
 
