@@ -1,16 +1,20 @@
 /**
  * 工具页（EchoDesk 前端 · 「宣纸书卷」古风，M-F3）。
  *
- * 三块：工具清单（含风险分级与参数 schema）、直调执行调试（external 202
+ * 四块：工具清单（含风险分级与参数 schema）、MCP 服务管理（热插拔：
+ * 添加即试连注册、移除即断连注销）、直调执行调试（external 202
  * 待确认时给确认/拒绝按钮）、调用审计（created_at 倒序，可刷新）。
  */
 import { useEffect, useState, type JSX } from "react";
-import { X } from "lucide-react";
+import { Plus, Trash2, X } from "lucide-react";
 import { RiskBadge } from "../components/ToolConfirmCard";
+import * as mcpApi from "../api/mcp";
+import type { McpServerInfo } from "../api/mcp";
 import * as toolsApi from "../api/tools";
 import type { ToolCall, ToolExecutionResult, ToolInfo } from "../api/tools";
 import { errorMessage } from "../stores/auth";
 import { useChatStore } from "../stores/chat";
+import { showToast } from "../stores/toast";
 
 /**
  * 工具页组件。
@@ -37,6 +41,21 @@ export default function ToolsPage(): JSX.Element {
   /** 执行/确认请求进行中。 */
   const [busy, setBusy] = useState(false);
 
+  /** MCP server 清单（配置 + 运行态）。 */
+  const [mcpServers, setMcpServers] = useState<McpServerInfo[]>([]);
+  /** MCP 添加表单：名称。 */
+  const [mcpName, setMcpName] = useState("");
+  /** MCP 添加表单：传输方式。 */
+  const [mcpTransport, setMcpTransport] = useState<"http" | "stdio">("http");
+  /** MCP 添加表单：http 端点。 */
+  const [mcpUrl, setMcpUrl] = useState("");
+  /** MCP 添加表单：stdio 命令。 */
+  const [mcpCommand, setMcpCommand] = useState("");
+  /** MCP 添加表单：stdio 参数（空白分隔）。 */
+  const [mcpArgsText, setMcpArgsText] = useState("");
+  /** MCP 添加/移除请求进行中。 */
+  const [mcpBusy, setMcpBusy] = useState(false);
+
   // workspace 未就绪时先引导 bootstrap（从登录直达本页的场景）
   useEffect(() => {
     if (workspaceId === null) {
@@ -50,11 +69,66 @@ export default function ToolsPage(): JSX.Element {
       const toolList = await toolsApi.listTools();
       setTools(toolList);
       setExecTool((prev) => (prev === "" && toolList.length > 0 ? toolList[0]!.name : prev));
+      setMcpServers(await mcpApi.listMcpServers());
       if (workspaceId !== null) {
         setCalls(await toolsApi.listToolCalls(workspaceId));
       }
     } catch (err) {
       setError(errorMessage(err));
+    }
+  }
+
+  /**
+   * 热添加 MCP server：服务端试连成功后工具即刻进入清单。
+   */
+  async function handleAddMcp(): Promise<void> {
+    setMcpBusy(true);
+    setError(null);
+    try {
+      const payload: mcpApi.McpServerCreatePayload = {
+        name: mcpName.trim(),
+        transport: mcpTransport,
+        ...(mcpTransport === "http"
+          ? { url: mcpUrl.trim() }
+          : {
+              command: mcpCommand.trim(),
+              args: mcpArgsText.trim() === "" ? [] : mcpArgsText.trim().split(/\s+/),
+            }),
+      };
+      const created = await mcpApi.addMcpServer(payload);
+      showToast({
+        message: `MCP 服务 ${created.name} 已接入（${created.tools.length} 个工具）`,
+        tone: "success",
+        duration: 4000,
+      });
+      setMcpName("");
+      setMcpUrl("");
+      setMcpCommand("");
+      setMcpArgsText("");
+      await refresh();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setMcpBusy(false);
+    }
+  }
+
+  /**
+   * 热移除 MCP server（断连 + 注销其全部工具）。
+   *
+   * @param name - server 标识。
+   */
+  async function handleRemoveMcp(name: string): Promise<void> {
+    setMcpBusy(true);
+    setError(null);
+    try {
+      await mcpApi.removeMcpServer(name);
+      showToast({ message: `MCP 服务 ${name} 已移除`, tone: "neutral", duration: 4000 });
+      await refresh();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setMcpBusy(false);
     }
   }
 
@@ -152,6 +226,106 @@ export default function ToolsPage(): JSX.Element {
             </div>
           ))}
           {tools.length === 0 && <p className="font-display text-xs text-muted">暂无工具</p>}
+        </div>
+      </section>
+
+      {/* MCP 服务管理（热插拔） */}
+      <section>
+        <h2 className="mb-2 flex items-center gap-2 font-display text-sm font-semibold text-primary">
+          <span className="bookmark-bar h-3.5" aria-hidden />
+          MCP 服务管理
+        </h2>
+        <div className="card-paper rounded-xl p-3">
+          <div className="grid gap-2">
+            {mcpServers.map((s) => (
+              <div
+                key={s.id}
+                className="flex items-center gap-2 rounded-lg border border-line/10 bg-base/40 px-3 py-2 text-xs"
+              >
+                <span className="font-mono font-medium text-primary">{s.name}</span>
+                <span className="rounded-md bg-accent/10 px-1.5 py-0.5 font-mono text-accent">{s.transport}</span>
+                <span
+                  className={
+                    s.connected
+                      ? "rounded-md bg-success/10 px-1.5 py-0.5 text-success"
+                      : "rounded-md bg-danger/10 px-1.5 py-0.5 text-danger"
+                  }
+                >
+                  {s.connected ? `已连接 · ${s.tools.length} 工具` : "未连接"}
+                </span>
+                <span className="truncate text-muted" title={s.url ?? s.command ?? ""}>
+                  {s.source === "env" ? "env 种子" : s.url ?? s.command}
+                </span>
+                {s.source === "user" && (
+                  <button
+                    type="button"
+                    disabled={mcpBusy}
+                    onClick={() => void handleRemoveMcp(s.name)}
+                    className="ml-auto rounded-md p-1 text-muted transition-colors hover:bg-danger/10 hover:text-danger disabled:opacity-50"
+                    aria-label={`移除 ${s.name}`}
+                  >
+                    <Trash2 className="size-3.5" strokeWidth={2} />
+                  </button>
+                )}
+              </div>
+            ))}
+            {mcpServers.length === 0 && (
+              <p className="font-display text-xs text-muted">暂无 MCP 服务——添加后其工具即刻注册（external 级，执行需确认）</p>
+            )}
+          </div>
+
+          {/* 添加表单 */}
+          <div className="mt-3 space-y-2 border-t border-line/10 pt-3">
+            <div className="flex gap-2">
+              <input
+                value={mcpName}
+                onChange={(e) => setMcpName(e.target.value)}
+                placeholder="名称（小写字母/数字/中划线）"
+                className="input w-44 rounded-lg px-2.5 py-1.5 font-mono text-xs"
+              />
+              <select
+                value={mcpTransport}
+                onChange={(e) => setMcpTransport(e.target.value as "http" | "stdio")}
+                className="input rounded-lg px-2.5 py-1.5 text-xs"
+              >
+                <option value="http">http（streamable）</option>
+                <option value="stdio">stdio（子进程）</option>
+              </select>
+              {mcpTransport === "http" ? (
+                <input
+                  value={mcpUrl}
+                  onChange={(e) => setMcpUrl(e.target.value)}
+                  placeholder="http://host:port/mcp"
+                  className="input min-w-0 flex-1 rounded-lg px-2.5 py-1.5 font-mono text-xs"
+                />
+              ) : (
+                <>
+                  <input
+                    value={mcpCommand}
+                    onChange={(e) => setMcpCommand(e.target.value)}
+                    placeholder="命令（如 npx）"
+                    className="input w-36 rounded-lg px-2.5 py-1.5 font-mono text-xs"
+                  />
+                  <input
+                    value={mcpArgsText}
+                    onChange={(e) => setMcpArgsText(e.target.value)}
+                    placeholder="参数（空白分隔，如 -y some-mcp-server）"
+                    className="input min-w-0 flex-1 rounded-lg px-2.5 py-1.5 font-mono text-xs"
+                  />
+                </>
+              )}
+              <button
+                type="button"
+                disabled={mcpBusy || mcpName.trim() === ""}
+                onClick={() => void handleAddMcp()}
+                className="btn-primary flex shrink-0 items-center gap-1 rounded-lg px-3 py-1.5 text-xs"
+              >
+                <Plus className="size-3.5" strokeWidth={2.2} />
+                {mcpBusy ? "接入中…" : "添加"}
+              </button>
+            </div>
+            <p className="text-xs text-muted">添加时服务端立即试连并注册工具；连接失败不会保存配置。</p>
+          </div>
         </div>
       </section>
 

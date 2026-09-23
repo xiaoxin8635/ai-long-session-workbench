@@ -2,9 +2,11 @@
 
 连接模型：
   - 每个已配置 server 一条长连接：后台 task 持有 transport 与 ClientSession
-    的 async context（stdio / streamable HTTP 双 transport），启动期
-    list_tools 后以 ``mcp.<server>.<tool>`` 前缀注册进 default_registry
-    （与 MCP tool 定义同构适配，注册表/执行器无感）
+    的 async context（stdio / streamable HTTP 双 transport），list_tools 后
+    以 ``mcp.<server>.<tool>`` 前缀注册进 default_registry（与 MCP tool
+    定义同构适配，注册表/执行器无感）
+  - 连接池按 server name 索引，支持运行期热插拔（connect_server /
+    disconnect_server，经 /api/mcp/servers 管理端点触发）
   - handler 忽略本地 db/user 上下文（仅满足统一签名），把校验后的参数
     转发到对应 session 的 call_tool，结果归一为 dict 回灌
 
@@ -218,6 +220,16 @@ class McpConnection:
         """server 标识。"""
         return self._config.name
 
+    @property
+    def risk(self) -> ToolRiskLevel:
+        """该 server 工具的统一风险分级。"""
+        return self._risk
+
+    @property
+    def connected(self) -> bool:
+        """长连接是否存活（session 可用）。"""
+        return self._session is not None
+
     async def start(self) -> list[ToolDefinition]:
         """建立连接并产出可注册的工具定义清单。
 
@@ -383,55 +395,98 @@ def parse_server_configs(raw: str) -> list[McpServerConfig]:
     return configs
 
 
-# 进程级连接池（lifespan 维护；connect 幂等重建，便于测试注入配置后重连）
-_CONNECTIONS: list[McpConnection] = []
+# 进程级连接池：server name → 连接（lifespan 与热插拔 API 共同维护）
+_CONNECTIONS: dict[str, McpConnection] = {}
 
 
-async def connect_mcp_tools(settings: Settings) -> list[McpConnection]:
-    """启动期接入全部已配置 MCP server 并注册工具（lifespan 调用）。
-
-    风险分级按 Settings.mcp_tool_risk 整体放宽/收紧（默认 external，D1）；
-    单个 server 失败仅告警跳过。空配置时为 no-op。
+def risk_from_settings(settings: Settings) -> ToolRiskLevel:
+    """解析 MCP 工具统一风险分级（非法值降级 external，D1 最保守）。
 
     Args:
         settings: 全局配置。
 
     Returns:
-        建立成功的连接列表（同时登记进进程级连接池）。
+        风险分级枚举。
     """
-    _CONNECTIONS.clear()
     try:
-        risk = ToolRiskLevel(settings.mcp_tool_risk)
+        return ToolRiskLevel(settings.mcp_tool_risk)
     except ValueError:
         logger.warning("mcp_tool_risk_invalid value=%s fallback=external", settings.mcp_tool_risk)
-        risk = ToolRiskLevel.EXTERNAL
-    for config in parse_server_configs(settings.mcp_servers_json):
-        if not config.enabled:
-            continue
-        connection = McpConnection(
-            config,
-            risk=risk,
-            call_timeout=settings.mcp_call_timeout_seconds,
-            connect_timeout=settings.mcp_connect_timeout_seconds,
-        )
-        definitions = await connection.start()
-        if definitions:
-            for definition in definitions:
-                default_registry.register(definition)
-            _CONNECTIONS.append(connection)
-            logger.info(
-                "mcp_server_connected server=%s tools=%d risk=%s",
-                config.name,
-                len(definitions),
-                risk.value,
-            )
-        else:
-            await connection.stop()
-    return list(_CONNECTIONS)
+        return ToolRiskLevel.EXTERNAL
+
+
+async def connect_server(config: McpServerConfig, settings: Settings) -> McpConnection:
+    """连接单个 server 并把工具注册进 default_registry（启动期与热添加共用）。
+
+    已存在同名连接时先断开重建（幂等，便于改配置后重连）。
+
+    Args:
+        config: server 配置。
+        settings: 全局配置（风险分级与超时来源）。
+
+    Returns:
+        已连接并注册完工具的连接对象。
+
+    Raises:
+        McpConnectionError: 连接失败/超时（热添加路径转 4xx/5xx 给用户；
+            启动路径由调用方捕获降级跳过）。
+    """
+    await disconnect_server(config.name)
+    connection = McpConnection(
+        config,
+        risk=risk_from_settings(settings),
+        call_timeout=settings.mcp_call_timeout_seconds,
+        connect_timeout=settings.mcp_connect_timeout_seconds,
+    )
+    definitions = await connection.start()
+    if not connection.connected:
+        raise McpConnectionError(f"MCP server {config.name} 连接失败（详见服务日志）")
+    for definition in definitions:
+        default_registry.register(definition)
+    _CONNECTIONS[config.name] = connection
+    logger.info(
+        "mcp_server_connected server=%s tools=%d risk=%s",
+        config.name,
+        len(definitions),
+        connection.risk.value,
+    )
+    return connection
+
+
+async def disconnect_server(name: str) -> bool:
+    """断开单个 server 并从注册表注销其全部工具（热移除/重建共用）。
+
+    Args:
+        name: server 标识。
+
+    Returns:
+        True 表示确实断开了一个存活连接；False 表示本来就没连。
+    """
+    connection = _CONNECTIONS.pop(name, None)
+    removed = default_registry.unregister_prefix(f"{_MCP_PREFIX}{name}.")
+    if connection is None:
+        return False
+    await connection.stop()
+    logger.info("mcp_server_disconnected server=%s tools_removed=%d", name, removed)
+    return True
+
+
+def connected_servers() -> dict[str, list[str]]:
+    """当前连接运行态快照（管理端点展示用）。
+
+    Returns:
+        server name → 已注册工具名列表（连接已死的 server 不在其中）。
+    """
+    snapshot: dict[str, list[str]] = {}
+    for name, connection in _CONNECTIONS.items():
+        if connection.connected:
+            prefix = f"{_MCP_PREFIX}{name}."
+            snapshot[name] = [d.name for d in default_registry.list_prefix(prefix)]
+    return snapshot
 
 
 async def disconnect_mcp_tools() -> None:
     """断开全部 MCP 连接（lifespan shutdown 段调用；未连接时 no-op）。"""
-    for connection in _CONNECTIONS:
-        await connection.stop()
+    for name in list(_CONNECTIONS):
+        await disconnect_server(name)
     _CONNECTIONS.clear()

@@ -47,6 +47,7 @@ class TimestampMixin:
 # 注意：Workspace/WorkspaceMember 定义在 user.py（无独立 workspace.py 模块）
 from app.models import (  # noqa: E402,F401
     knowledge,
+    mcp_server,
     memory,
     observability,
     session,

@@ -5,7 +5,7 @@
  * 实机探针覆盖（probe_mf3.py）。
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 vi.mock("../api/tools", () => ({
   listTools: vi.fn(),
@@ -14,12 +14,21 @@ vi.mock("../api/tools", () => ({
   confirmToolCall: vi.fn(),
 }));
 
+vi.mock("../api/mcp", () => ({
+  listMcpServers: vi.fn(),
+  addMcpServer: vi.fn(),
+  removeMcpServer: vi.fn(),
+}));
+
 const { default: ToolsPage } = await import("../pages/ToolsPage");
 const toolsApi = await import("../api/tools");
+const mcpApi = await import("../api/mcp");
 const { useChatStore } = await import("../stores/chat");
 
 const listToolsMock = vi.mocked(toolsApi.listTools);
 const listToolCallsMock = vi.mocked(toolsApi.listToolCalls);
+const listMcpServersMock = vi.mocked(mcpApi.listMcpServers);
+const removeMcpServerMock = vi.mocked(mcpApi.removeMcpServer);
 
 describe("ToolsPage", () => {
   beforeEach(() => {
@@ -38,6 +47,21 @@ describe("ToolsPage", () => {
         description: "创建待办任务",
         risk: "write",
         args_schema: {},
+      },
+    ]);
+    listMcpServersMock.mockResolvedValue([
+      {
+        id: "7c9e6679-7425-40de-a5fd-000000000002",
+        name: "demo-mcp",
+        transport: "http",
+        url: "http://demo:9000/mcp",
+        command: null,
+        args: [],
+        enabled: true,
+        source: "user",
+        created_at: "2026-09-23T10:00:00Z",
+        connected: true,
+        tools: ["mcp.demo-mcp.echo"],
       },
     ]);
     listToolCallsMock.mockResolvedValue([
@@ -70,5 +94,14 @@ describe("ToolsPage", () => {
     expect(await screen.findByText("status_code=200")).toBeTruthy();
     expect(screen.getByText("调用审计")).toBeTruthy();
     expect(screen.getByText("刷新")).toBeTruthy();
+  });
+
+  it("渲染 MCP 服务管理并支持热移除", async () => {
+    removeMcpServerMock.mockResolvedValue(undefined);
+    render(<ToolsPage />);
+    expect(await screen.findByText("demo-mcp")).toBeTruthy();
+    expect(screen.getByText("已连接 · 1 工具")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("移除 demo-mcp"));
+    await waitFor(() => expect(removeMcpServerMock).toHaveBeenCalledWith("demo-mcp"));
   });
 });

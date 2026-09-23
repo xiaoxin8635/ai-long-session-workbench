@@ -21,6 +21,7 @@ from app.api.routes import (
     context_debug,
     health,
     knowledge,
+    mcp,
     memories,
     sessions,
     tasks,
@@ -32,10 +33,12 @@ from app.core.config import get_settings
 from app.core.errors import AppError, app_error_handler
 from app.core.logging import setup_logging
 from app.core.middleware import TraceIDMiddleware
+from app.db.session import session_scope
 from app.llm.embeddings import EmbeddingError, get_embedding_client
 from app.llm.rerank import RerankError, get_rerank_client
 from app.observability.tracing import shutdown_flush
-from app.tools.mcp_client import connect_mcp_tools, disconnect_mcp_tools
+from app.services.mcp_server_service import mcp_server_service
+from app.tools.mcp_client import disconnect_mcp_tools
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +93,12 @@ async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
         Langfuse 批量上报队列（M-12）后返回（未配置项均为 no-op）。
     """
     await get_agent_runtime().start()
-    await connect_mcp_tools(get_settings())
+    # MCP：env 种子同步进 mcp_servers 表后按 DB 行连接（支持运行期热插拔）
+    try:
+        async for db in session_scope():
+            await mcp_server_service.bootstrap(db, get_settings())
+    except Exception as exc:
+        logger.warning("mcp_bootstrap_skipped error=%s（不阻塞启动）", exc)
     # 后台预热推理模型（不阻塞启动/健康检查）；shutdown 时取消未完成任务
     warmup_task = asyncio.create_task(_warmup_models())
     yield
@@ -144,6 +152,7 @@ def create_app() -> FastAPI:
     app.include_router(knowledge.router)
     app.include_router(tasks.router)
     app.include_router(tools.router)
+    app.include_router(mcp.router)
 
     return app
 

@@ -222,3 +222,75 @@ async def test_start_degrades_on_connection_refused() -> None:
     assert connection._session is None
     assert connection._task is None  # stop 已回收
     await connection.stop()  # 幂等
+
+
+# ---- 热插拔（连接池 + 注册表联动，M-09 扩展）----
+
+
+async def _noop_handler(db: Any, **kwargs: Any) -> dict[str, Any]:
+    """注册表占位 handler（不执行）。"""
+    return {}
+
+
+def _definition(name: str) -> Any:
+    """构造最小工具定义（registry 前缀注销用）。"""
+    from app.tools.registry import ToolDefinition
+
+    return ToolDefinition(
+        name=name,
+        description="测试占位",
+        risk=ToolRiskLevel.EXTERNAL,
+        args_model=None,
+        handler=_noop_handler,
+    )
+
+
+def test_registry_unregister_prefix() -> None:
+    """unregister_prefix 只移除前缀命中项并返回条数；list_prefix 同步收敛。"""
+    from app.tools.registry import default_registry
+
+    default_registry.register(_definition("mcp.pfx.a"))
+    default_registry.register(_definition("mcp.pfx.b"))
+    default_registry.register(_definition("mcp.other.c"))
+    try:
+        assert len(default_registry.list_prefix("mcp.pfx.")) == 2
+        assert default_registry.unregister_prefix("mcp.pfx.") == 2
+        assert default_registry.get("mcp.pfx.a") is None
+        assert default_registry.get("mcp.other.c") is not None
+        assert default_registry.unregister_prefix("mcp.pfx.") == 0  # 幂等
+    finally:
+        default_registry.unregister_prefix("mcp.pfx.")
+        default_registry.unregister_prefix("mcp.other.")
+
+
+async def test_connect_server_raises_on_refused() -> None:
+    """connect_server：连接被拒抛 McpConnectionError，且不污染连接池。"""
+    from app.core.config import get_settings
+    from app.tools.mcp_client import _CONNECTIONS, connect_server
+
+    with pytest.raises(McpConnectionError):
+        await connect_server(_http_config(name="refused-hot"), get_settings())
+    assert "refused-hot" not in _CONNECTIONS
+
+
+async def test_disconnect_server_hot_removes_tools() -> None:
+    """disconnect_server：断连 + 注销 mcp.<name>.* 工具；未连接时返回 False。"""
+    from app.tools.mcp_client import _CONNECTIONS, connected_servers, disconnect_server
+    from app.tools.registry import default_registry
+
+    connection = McpConnection(
+        _http_config(name="hotdemo"), risk=ToolRiskLevel.EXTERNAL, call_timeout=5
+    )
+    connection._session = _FakeSession(CallToolResult(content=[]))  # type: ignore[assignment]
+    default_registry.register(_definition("mcp.hotdemo.tool"))
+    _CONNECTIONS["hotdemo"] = connection
+    try:
+        assert "hotdemo" in connected_servers()
+        assert connected_servers()["hotdemo"] == ["mcp.hotdemo.tool"]
+        assert await disconnect_server("hotdemo") is True
+        assert default_registry.get("mcp.hotdemo.tool") is None
+        assert "hotdemo" not in connected_servers()
+        assert await disconnect_server("hotdemo") is False  # 幂等
+    finally:
+        _CONNECTIONS.pop("hotdemo", None)
+        default_registry.unregister_prefix("mcp.hotdemo.")

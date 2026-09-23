@@ -38,7 +38,13 @@ class ToolDefinition:
 
 
 class ToolRegistry:
-    """进程内工具注册表（注册后不可变，线程安全由 GIL + 启动期注册保证）。"""
+    """进程内工具注册表。
+
+    启动期注册 builtin/env-MCP 工具；运行期经 /api/mcp/servers 热插拔
+    MCP 工具（register/unregister_prefix 成对）。asyncio 单线程模型下
+    dict 操作天然原子，唯一约束：迭代 list() 结果期间不得穿插注销
+    （FastAPI 请求内不存在该模式）。
+    """
 
     def __init__(self) -> None:
         """初始化空注册表。"""
@@ -51,6 +57,31 @@ class ToolRegistry:
             definition: 工具定义。
         """
         self._tools[definition.name] = definition
+
+    def unregister_prefix(self, prefix: str) -> int:
+        """注销名称以 prefix 开头的全部工具（MCP server 热移除用）。
+
+        Args:
+            prefix: 注册名前缀（如 ``mcp.<server>.``）。
+
+        Returns:
+            实际移除的条目数。
+        """
+        names = [name for name in self._tools if name.startswith(prefix)]
+        for name in names:
+            del self._tools[name]
+        return len(names)
+
+    def list_prefix(self, prefix: str) -> list[ToolDefinition]:
+        """按前缀取已注册工具（运行态展示用）。
+
+        Args:
+            prefix: 注册名前缀。
+
+        Returns:
+            命中的定义列表（按名排序）。
+        """
+        return [self._tools[name] for name in sorted(self._tools) if name.startswith(prefix)]
 
     def get(self, name: str) -> ToolDefinition | None:
         """按名取工具。
