@@ -135,15 +135,24 @@ class ChatService:
         user_id: uuid.UUID,
         session_id: uuid.UUID,
         query: str,
+        attachment_ids: Sequence[uuid.UUID] | None = None,
     ) -> AssembledContext:
         """M-05 ContextBuilder 装配（公开供路由层取 citations；sections 供用量统计）。
 
         M-12 起包 context.assemble span：各区块 token 明细与装配总数进
         Langfuse metadata（未配置观测时 no-op，零开销）。
+
+        Args:
+            attachment_ids: 本轮聊天附件的知识文件 ID（强制注入其切片）。
         """
         with tracing.span("context.assemble") as obs:
             assembled = await self._context_builder.build(
-                db, ws_id=ws_id, user_id=user_id, session_id=session_id, query=query
+                db,
+                ws_id=ws_id,
+                user_id=user_id,
+                session_id=session_id,
+                query=query,
+                attachment_ids=attachment_ids,
             )
             obs.update(
                 metadata={

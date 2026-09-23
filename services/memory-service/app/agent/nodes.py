@@ -80,6 +80,7 @@ async def load_context(state: GraphState, config: RunnableConfig) -> dict[str, A
         user_id=ctx.user.id,
         session_id=ctx.session_id,
         query=state["user_content"],
+        attachment_ids=ctx.attachment_ids,
     )
     ctx.assembled = assembled
     return {"messages": assembled.messages}

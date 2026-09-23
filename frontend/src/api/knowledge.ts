@@ -43,13 +43,16 @@ export interface KnowledgeSearchResult {
 export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
 /** 允许的文件扩展名（与服务端解析器支持范围一致）。 */
-export const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".md", ".txt"];
+export const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".md", ".txt", ".csv", ".xlsx"];
+
+/** 文件选择器 accept 属性值（扩展名逗号拼接）。 */
+export const ACCEPT_EXTENSIONS = ALLOWED_EXTENSIONS.join(",");
 
 /**
  * 上传知识文件（multipart）。
  *
  * @param workspaceId - workspace ID（query 参数）。
- * @param file - 浏览器 File 对象（pdf/docx/md/txt，≤20MB）。
+ * @param file - 浏览器 File 对象（pdf/docx/md/txt/csv/xlsx，≤20MB）。
  * @returns 新建文件元信息（status=parsing，embedding 后台补齐）。
  */
 export async function uploadKnowledgeFile(

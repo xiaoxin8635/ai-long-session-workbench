@@ -10,6 +10,7 @@
 
 import logging
 import uuid
+from collections.abc import Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,6 +26,10 @@ logger = logging.getLogger(__name__)
 
 # RRF 常数（standard k=60：score = Σ 1/(k + rank)，rank 从 0 起）
 RRF_K = 60
+
+# 聊天附件强制注入分数：高于任何检索命中（rerank 分 0~1、RRF 融合分 <0.05），
+# 保证 ContextBuilder._pack_scored 在 RAG 区块预算内优先装入用户本轮附上的文件
+FORCED_ATTACHMENT_SCORE = 2.0
 
 
 class KnowledgeRetriever:
@@ -126,3 +131,39 @@ class KnowledgeRetriever:
             for cid, score in order[:top_k]
             if cid in rows
         ]
+
+    async def fetch_by_file_ids(
+        self, db: AsyncSession, *, ws_id: uuid.UUID, file_ids: Sequence[uuid.UUID]
+    ) -> list[CitedChunk]:
+        """强制取指定文件的全部切片（聊天附件直注，绕过 query 相关性检索）。
+
+        与 search() 的区别：不做向量/BM25/rerank，直接按 workspace 隔离取整份
+        文件的切片，并赋 FORCED_ATTACHMENT_SCORE 保证预算内优先装入。文件不属
+        于本 workspace 时静默跳过（防越权枚举）。
+
+        Args:
+            db: 数据库会话。
+            ws_id: workspace 隔离边界。
+            file_ids: 附件文件 ID 列表。
+
+        Returns:
+            CitedChunk 列表（按文件顺序、chunk_index 正序）。
+        """
+        hits: list[CitedChunk] = []
+        for file_id in file_ids:
+            file = await knowledge_repo.get_file(db, ws_id=ws_id, file_id=file_id)
+            if file is None:
+                logger.warning("rag_attachment_not_found ws=%s file=%s", ws_id, file_id)
+                continue
+            for chunk in await knowledge_repo.list_chunks(db, file_id=file_id):
+                hits.append(
+                    CitedChunk(
+                        chunk_id=chunk.id,
+                        file_id=file.id,
+                        filename=file.filename,
+                        chunk_index=chunk.chunk_index,
+                        content=chunk.content,
+                        score=FORCED_ATTACHMENT_SCORE,
+                    )
+                )
+        return hits

@@ -20,11 +20,14 @@ class ChatMetadata(BaseModel):
         session_id: 目标会话；缺省时自动创建新会话。
         enable_tools: 是否启用 Agent 工具循环（M-08 M3）；False 时纯对话
             （不注入 tools 参数，省 token 且无工具行为）。
+        attachment_ids: 本轮附上的知识文件 ID（先经 /api/knowledge/files 上传）；
+            其切片以高分强制注入当轮上下文，实现「带文件/表格提问」。
     """
 
     workspace_id: str = Field(min_length=1)
     session_id: str | None = None
     enable_tools: bool = True
+    attachment_ids: list[str] | None = None
 
 
 class ChatCompletionRequest(BaseModel):

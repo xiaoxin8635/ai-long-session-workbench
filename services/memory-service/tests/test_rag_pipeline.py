@@ -8,9 +8,12 @@
   - ingest 管线：向量回填 + 状态机推进
   - API 链路：上传→检索→引用字段、checksum 幂等、同名版本链、
     删除后不再命中（DoD）、非法类型 422
-  - builder 接入：RAG 区块渲染 + citations 与预算裁剪对齐
+  - parser：csv/xlsx 表格解析（列名渲染、多编码、空表拒绝）
+  - builder 接入：RAG 区块渲染 + citations 与预算裁剪对齐；
+    聊天附件（attachment_ids）强制注入并置顶 citations
 """
 
+import io
 import uuid
 
 import pytest
@@ -28,7 +31,8 @@ from app.models.user import User, Workspace, WorkspaceMember
 from app.rag.chunker import split_chunks
 from app.rag.ingest import ingest_embeddings
 from app.rag.lexical import rank_by_bm25
-from app.rag.retriever import KnowledgeRetriever
+from app.rag.parser import ParseError, parse_document
+from app.rag.retriever import FORCED_ATTACHMENT_SCORE, KnowledgeRetriever
 from app.rag.schemas import CitedChunk
 from app.rag.tokenizer import tokenize_for_index
 from app.repositories import knowledge_repo
@@ -114,6 +118,53 @@ def test_rerank_parse_data_protocol_and_shortfall() -> None:
     assert RerankClient._parse_response(data, expected_len=1) == [0.5]
     with pytest.raises(RerankError):
         RerankClient._parse_response(data, expected_len=2)
+
+
+# ---- 纯函数：表格解析（csv/xlsx）----
+
+
+def test_parse_csv_renders_column_pairs() -> None:
+    """csv 渲染为「表头 + 逐行 列名: 值」，file_type=csv。"""
+    data = "姓名,年龄,城市\n张三,30,北京\n李四,25,上海\n".encode()
+    file_type, text = parse_document("roster.csv", data)
+    assert file_type == "csv"
+    assert "姓名 | 年龄 | 城市" in text
+    assert "姓名: 张三 | 年龄: 30 | 城市: 北京" in text
+    assert "姓名: 李四" in text
+
+
+def test_parse_csv_gbk_fallback() -> None:
+    """非 UTF-8（GBK，Excel 常见导出）也能解码。"""
+    data = "城市,人口\n北京,2189万\n".encode("gbk")
+    _, text = parse_document("gbk.csv", data)
+    assert "城市: 北京" in text and "人口: 2189万" in text
+
+
+def test_parse_csv_empty_rejected() -> None:
+    """只有空白行的 csv 视为无有效数据，422。"""
+    with pytest.raises(ParseError):
+        parse_document("empty.csv", b"\n\n  ,  \n")
+
+
+def test_parse_xlsx_multi_sheet() -> None:
+    """xlsx 逐工作表渲染，带表名小节标题。"""
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws1 = wb.active
+    ws1.title = "销售"
+    ws1.append(["月份", "金额"])
+    ws1.append(["一月", 100])
+    ws2 = wb.create_sheet("成本")
+    ws2.append(["项目", "支出"])
+    ws2.append(["服务器", 50])
+    buf = io.BytesIO()
+    wb.save(buf)
+
+    file_type, text = parse_document("report.xlsx", buf.getvalue())
+    assert file_type == "xlsx"
+    assert "# 工作表：销售" in text and "月份: 一月 | 金额: 100" in text
+    assert "# 工作表：成本" in text and "项目: 服务器 | 支出: 50" in text
 
 
 # ---- 检索器（数据库）----
@@ -262,6 +313,32 @@ async def test_retriever_vector_and_rerank() -> None:
         degraded = KnowledgeRetriever(embedding=FakeEmbedding(), rerank=ExplodingRerank())
         hits2 = await degraded.search(db, ws_id=ws_id, query="任意查询")
         assert hits2[0].chunk_index == 0
+
+
+async def test_fetch_by_file_ids_forced_and_isolated() -> None:
+    """附件强制取全量切片并赋高分；跨 workspace 文件跳过（防越权）。"""
+    retriever = KnowledgeRetriever()
+    async with get_session_factory()() as db:
+        ws_id = await _seed_workspace(db)
+        file_id = await _seed_chunks(
+            db,
+            ws_id,
+            "attached.csv",
+            [
+                {"index": 0, "content": "第一行数据", "tokens": ["第一行"]},
+                {"index": 1, "content": "第二行数据", "tokens": ["第二行"]},
+            ],
+        )
+        other_ws = await _seed_workspace(db)
+
+        hits = await retriever.fetch_by_file_ids(db, ws_id=ws_id, file_ids=[file_id])
+        assert [h.chunk_index for h in hits] == [0, 1]
+        assert all(h.score == FORCED_ATTACHMENT_SCORE for h in hits)
+        assert all(h.filename == "attached.csv" for h in hits)
+
+        # 文件属于别的 workspace：静默跳过返回空
+        foreign = await retriever.fetch_by_file_ids(db, ws_id=other_ws, file_ids=[file_id])
+        assert foreign == []
 
 
 async def test_ingest_pipeline_fills_embeddings(
@@ -472,10 +549,12 @@ async def test_upload_rejects_unsupported_type(
 class FakeKnowledge:
     """固定返回两条命中的假知识检索器。"""
 
-    def __init__(self, hits: list[CitedChunk]) -> None:
-        """Args: hits: search 的固定返回。"""
+    def __init__(self, hits: list[CitedChunk], forced: list[CitedChunk] | None = None) -> None:
+        """Args: hits: search 的固定返回；forced: fetch_by_file_ids 的固定返回。"""
         self.hits = hits
+        self.forced = forced or []
         self.calls: list[str] = []
+        self.forced_calls: list[list[uuid.UUID]] = []
 
     async def search(
         self, db: AsyncSession, *, ws_id: uuid.UUID, query: str, top_k: int | None = None
@@ -483,6 +562,13 @@ class FakeKnowledge:
         """记录查询并返回预置命中。"""
         self.calls.append(query)
         return self.hits
+
+    async def fetch_by_file_ids(
+        self, db: AsyncSession, *, ws_id: uuid.UUID, file_ids: list[uuid.UUID]
+    ) -> list[CitedChunk]:
+        """记录附件文件 ID 并返回预置的强制命中。"""
+        self.forced_calls.append(list(file_ids))
+        return self.forced
 
 
 class FakeWorkingMemory:
@@ -550,3 +636,42 @@ async def test_builder_citations_filtered_by_budget() -> None:
         )
     assert len(assembled.citations) == 1  # 只引用真正装入的 chunk
     assert "超" * 550 in assembled.messages[0]["content"]
+
+
+async def test_builder_forced_attachment_injection() -> None:
+    """附件 chunks 强制注入 RAG 区块并置顶 citations（高于检索命中）。"""
+    search_hit = CitedChunk(
+        chunk_id=uuid.uuid4(),
+        file_id=uuid.uuid4(),
+        filename="handbook.md",
+        chunk_index=0,
+        content="普通检索命中内容",
+        score=0.4,
+    )
+    attachment_id = uuid.uuid4()
+    forced = CitedChunk(
+        chunk_id=uuid.uuid4(),
+        file_id=attachment_id,
+        filename="quarterly.xlsx",
+        chunk_index=0,
+        content="附件表格：一季度营收 100 万",
+        score=FORCED_ATTACHMENT_SCORE,
+    )
+    knowledge = FakeKnowledge([search_hit], forced=[forced])
+    builder = ContextBuilder(FakeWorkingMemory(), retriever=None, knowledge=knowledge)
+
+    async with get_session_factory()() as db:
+        assembled = await builder.build(
+            db,
+            ws_id=uuid.uuid4(),
+            user_id=uuid.uuid4(),
+            session_id=uuid.uuid4(),
+            query="看看这份表格",
+            attachment_ids=[attachment_id],
+        )
+    assert knowledge.forced_calls == [[attachment_id]]
+    system = assembled.messages[0]["content"]
+    assert "附件表格：一季度营收 100 万" in system
+    # 附件分数高，citations 首条即附件；检索命中仍在列
+    assert assembled.citations[0].filename == "quarterly.xlsx"
+    assert {c.filename for c in assembled.citations} == {"quarterly.xlsx", "handbook.md"}

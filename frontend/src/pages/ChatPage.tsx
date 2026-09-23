@@ -8,8 +8,11 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
   ArrowDown,
+  FileText,
+  Loader2,
   MessageSquare,
   PanelRight,
+  Paperclip,
   Pencil,
   Plus,
   Send,
@@ -18,13 +21,27 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState, type JSX, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type JSX,
+  type KeyboardEvent,
+} from "react";
 import { ContextPanel } from "../components/ContextPanel";
 import { MessageBubble } from "../components/MessageBubble";
 import { ToolConfirmCard } from "../components/ToolConfirmCard";
 import { Badge } from "../components/ui/Badge";
+import {
+  ACCEPT_EXTENSIONS,
+  ALLOWED_EXTENSIONS,
+  MAX_UPLOAD_BYTES,
+  uploadKnowledgeFile,
+} from "../api/knowledge";
 import type { SessionRead } from "../api/sessions";
-import { useChatStore } from "../stores/chat";
+import { errorMessage } from "../stores/auth";
+import { useChatStore, type ChatAttachment } from "../stores/chat";
 import { showToast } from "../stores/toast";
 
 /** 空态引导的快捷提问样例。 */
@@ -71,11 +88,17 @@ export default function ChatPage(): JSX.Element {
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   /** 延迟删除中的会话 ID（乐观隐藏 + 撤销窗口；null = 无）。 */
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  /** 本轮已上传、待随消息发送的附件（知识文件）。 */
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  /** 附件上传进行中（禁用发送与再次选择）。 */
+  const [uploading, setUploading] = useState(false);
 
   /** 消息区滚动容器（新消息/流式增量时滚到底部）。 */
   const scrollRef = useRef<HTMLDivElement>(null);
   /** 输入框（自动增高）。 */
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  /** 隐藏的附件文件选择器。 */
+  const fileInputRef = useRef<HTMLInputElement>(null);
   /** 是否贴底（决定新内容是否自动滚动，避免打断上滚阅读）。 */
   const stickRef = useRef(true);
   /** 延迟删除计时器（撤销时清除）。 */
@@ -129,16 +152,73 @@ export default function ChatPage(): JSX.Element {
       ?.toolCall ?? null;
 
   /**
-   * 提交当前草稿（流式中、有挂起确认或草稿为空时忽略）。
+   * 提交当前草稿（流式中、上传中、有挂起确认或内容为空时忽略）。
+   *
+   * 仅有附件而无文字时用一句中性提示占位（服务端消息正文不可为空）。
    */
   function submit(): void {
-    const content = draft.trim();
-    if (content === "" || streaming || workspaceId === null || pendingCall !== null) {
+    const text = draft.trim();
+    const content = text !== "" ? text : attachments.length > 0 ? "请看我上传的附件。" : "";
+    if (content === "" || streaming || uploading || workspaceId === null || pendingCall !== null) {
       return;
     }
+    const outgoing = attachments;
     setDraft("");
+    setAttachments([]);
     stickRef.current = true; // 发送新消息强制贴底
-    void sendMessage(content);
+    void sendMessage(content, outgoing.length > 0 ? outgoing : undefined);
+  }
+
+  /**
+   * 选择文件后立即上传到知识库（复用 ingest 管线），成功后加入待发附件列表。
+   *
+   * @param e - 文件选择器 change 事件。
+   */
+  async function handleFiles(e: ChangeEvent<HTMLInputElement>): Promise<void> {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = ""; // 清空以便再次选择同名文件仍能触发 change
+    if (files.length === 0 || workspaceId === null) {
+      return;
+    }
+    setUploading(true);
+    try {
+      for (const file of files) {
+        const ext = `.${file.name.split(".").pop()?.toLowerCase() ?? ""}`;
+        if (!ALLOWED_EXTENSIONS.includes(ext)) {
+          showToast({ message: `不支持的文件类型 ${ext}`, tone: "danger", duration: 4000 });
+          continue;
+        }
+        if (file.size > MAX_UPLOAD_BYTES) {
+          showToast({ message: `${file.name} 超过 20MB 上限`, tone: "danger", duration: 4000 });
+          continue;
+        }
+        try {
+          const uploaded = await uploadKnowledgeFile(workspaceId, file);
+          setAttachments((prev) =>
+            prev.some((a) => a.id === uploaded.id)
+              ? prev
+              : [...prev, { id: uploaded.id, filename: uploaded.filename }]
+          );
+        } catch (err) {
+          showToast({
+            message: `${file.name} 上传失败：${errorMessage(err)}`,
+            tone: "danger",
+            duration: 4000,
+          });
+        }
+      }
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  /**
+   * 移除一个待发附件（仅从本轮列表剔除，不删知识库文件）。
+   *
+   * @param id - 知识文件 ID。
+   */
+  function removeAttachment(id: string): void {
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
   }
 
   /**
@@ -485,12 +565,67 @@ export default function ChatPage(): JSX.Element {
 
         {/* ---- 悬浮输入区 ---- */}
         <footer className="p-4">
+          {/* 待发附件 chips（选择文件后立即上传，随下一条消息发送） */}
+          <AnimatePresence initial={false}>
+            {(attachments.length > 0 || uploading) && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="mb-2 flex flex-wrap gap-2 overflow-hidden px-1"
+              >
+                {attachments.map((a) => (
+                  <span
+                    key={a.id}
+                    className="flex max-w-[220px] items-center gap-1.5 rounded-lg border border-line/10 bg-elevated/60 py-1 pl-2 pr-1 text-xs text-secondary"
+                  >
+                    <FileText className="size-3.5 shrink-0 text-accent" strokeWidth={2} />
+                    <span className="truncate">{a.filename}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeAttachment(a.id)}
+                      aria-label={`移除附件 ${a.filename}`}
+                      className="shrink-0 rounded p-0.5 transition-colors hover:bg-danger/20 hover:text-danger"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </span>
+                ))}
+                {uploading && (
+                  <span className="flex items-center gap-1.5 rounded-lg border border-line/10 bg-elevated/60 px-2 py-1 text-xs text-muted">
+                    <Loader2 className="size-3.5 animate-spin" />
+                    上传中…
+                  </span>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           <div
             className={
               "group flex items-end gap-2 rounded-2xl border border-line/10 bg-surface/70 p-2 backdrop-blur-md transition-[border-color,box-shadow] duration-300 " +
               "focus-within:border-accent/40 focus-within:shadow-glow"
             }
           >
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept={ACCEPT_EXTENSIONS}
+              className="hidden"
+              onChange={(e) => void handleFiles(e)}
+            />
+            <motion.button
+              type="button"
+              whileTap={{ scale: 0.9 }}
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading || streaming || pendingCall !== null || workspaceId === null}
+              aria-label="添加附件"
+              title="添加附件（pdf / docx / md / txt / csv / xlsx，≤20MB）"
+              className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-line/10 text-secondary transition-colors duration-200 hover:border-accent/40 hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Paperclip className="size-4" strokeWidth={2} />
+            </motion.button>
             <textarea
               ref={inputRef}
               rows={1}
@@ -524,7 +659,12 @@ export default function ChatPage(): JSX.Element {
                 type="button"
                 whileTap={{ scale: 0.9 }}
                 onClick={submit}
-                disabled={pendingCall !== null || draft.trim() === "" || workspaceId === null}
+                disabled={
+                  pendingCall !== null ||
+                  uploading ||
+                  (draft.trim() === "" && attachments.length === 0) ||
+                  workspaceId === null
+                }
                 aria-label="发送"
                 className="btn-primary flex size-9 shrink-0 items-center justify-center rounded-xl"
               >
@@ -533,7 +673,7 @@ export default function ChatPage(): JSX.Element {
             )}
           </div>
           <p className="mt-2 px-1 text-center font-mono text-[10px] text-muted">
-            Enter 发送 · Shift+Enter 换行 · 记忆与知识自动注入上下文
+            Enter 发送 · Shift+Enter 换行 · 可附文件/表格 · 记忆与知识自动注入上下文
           </p>
         </footer>
       </section>

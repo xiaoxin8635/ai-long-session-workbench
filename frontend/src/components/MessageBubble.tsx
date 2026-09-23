@@ -7,7 +7,7 @@
  * 为可点击按钮（书签样式），展开显示文件名 / 切片序号 / 相关度明细。
  */
 import { motion } from "framer-motion";
-import { Check, Copy, FileText, RotateCcw, Sparkles } from "lucide-react";
+import { Check, Copy, FileText, Paperclip, RotateCcw, Sparkles } from "lucide-react";
 import { useState, type JSX } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -94,6 +94,19 @@ export function MessageBubble({
         className="group flex flex-col items-end"
       >
         <div className="max-w-3xl rounded-2xl rounded-br-md bg-gradient-to-br from-accent-bright to-accent px-4 py-2.5 text-sm leading-6 text-elevated shadow-panel">
+          {message.attachments !== undefined && message.attachments.length > 0 && (
+            <div className="mb-1.5 flex flex-wrap justify-end gap-1.5">
+              {message.attachments.map((a) => (
+                <span
+                  key={a.id}
+                  className="flex max-w-[14rem] items-center gap-1 rounded-md bg-elevated/20 px-1.5 py-0.5 text-[11px] text-elevated"
+                >
+                  <Paperclip className="size-3 shrink-0" strokeWidth={2} aria-hidden />
+                  <span className="truncate">{a.filename}</span>
+                </span>
+              ))}
+            </div>
+          )}
           <p className="whitespace-pre-wrap break-words font-medium">{message.content}</p>
         </div>
         {toolbar}

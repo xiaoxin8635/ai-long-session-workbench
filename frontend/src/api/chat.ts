@@ -58,6 +58,8 @@ export interface ChatStreamParams {
   content: string;
   /** 是否启用 Agent 工具循环（默认 true）。 */
   enableTools?: boolean;
+  /** 本轮附件的知识文件 ID（服务端强制注入其切片到当轮上下文）。 */
+  attachmentIds?: string[];
   /** 中断信号（「停止生成」用；abort 后 fetch 以 AbortError 拒绝）。 */
   signal?: AbortSignal;
   /** 流式回调集合。 */
@@ -192,6 +194,9 @@ export async function streamChat(params: ChatStreamParams): Promise<void> {
       workspace_id: params.workspaceId,
       session_id: params.sessionId,
       enable_tools: params.enableTools ?? true,
+      ...(params.attachmentIds && params.attachmentIds.length > 0
+        ? { attachment_ids: params.attachmentIds }
+        : {}),
     },
   };
   const respBody = await openStream("/v1/chat/completions", body, params.signal);

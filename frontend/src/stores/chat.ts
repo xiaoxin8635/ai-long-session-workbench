@@ -12,12 +12,22 @@ import type { MessageRead, SessionRead } from "../api/sessions";
 import { listWorkspaces } from "../api/workspaces";
 import { errorMessage } from "./auth";
 
+/** 聊天附件（已上传到知识库的文件，随消息一并展示与发送）。 */
+export interface ChatAttachment {
+  /** 知识文件 ID（发送时作为 attachment_ids 传给服务端）。 */
+  id: string;
+  /** 展示用文件名。 */
+  filename: string;
+}
+
 /** 聊天界面消息（比 API MessageRead 多流式期间的前端态字段）。 */
 export interface ChatMessage {
   /** 前端唯一键（历史消息用服务端 ID，流式消息用 `local-<n>`）。 */
   key: string;
   role: "user" | "assistant";
   content: string;
+  /** 用户消息携带的附件（知识文件）。 */
+  attachments?: ChatAttachment[];
   /** 助手消息的 RAG 引用（finish 片落地）。 */
   citations?: Citation[];
   /** 流式失败标记（展示重试提示）。 */
@@ -49,8 +59,8 @@ interface ChatState {
   selectSession: (sessionId: string) => Promise<void>;
   /** 进入草稿态（新建对话：清空当前选择与消息）。 */
   startDraft: () => void;
-  /** 发送消息（流式）。 */
-  sendMessage: (content: string) => Promise<void>;
+  /** 发送消息（流式）；attachments 为本轮携带的知识文件附件。 */
+  sendMessage: (content: string, attachments?: ChatAttachment[]) => Promise<void>;
   /** 停止当前流式生成（中断 SSE，保留已到达的部分正文）。 */
   stopStreaming: () => void;
   /** 重新生成最后一条助手回答（丢弃旧答复，重跑同一轮用户消息）。 */
@@ -128,8 +138,8 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     set({ activeSessionId: null, messages: [], error: null });
   },
 
-  sendMessage: async (content) => {
-    await runTurn(content, true);
+  sendMessage: async (content, attachments) => {
+    await runTurn(content, true, attachments);
   },
 
   stopStreaming: () => {
@@ -145,16 +155,18 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     }
     // 找最后一条用户消息，以其为错重跑（runTurn 内部会截断其后的旧助手回复）
     let lastUserContent: string | null = null;
+    let lastUserAttachments: ChatAttachment[] | undefined;
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       if (messages[i]!.role === "user") {
         lastUserContent = messages[i]!.content;
+        lastUserAttachments = messages[i]!.attachments;
         break;
       }
     }
     if (lastUserContent === null) {
       return;
     }
-    await runTurn(lastUserContent, false);
+    await runTurn(lastUserContent, false, lastUserAttachments);
   },
 
   resumeToolCall: async (approve) => {
@@ -258,8 +270,14 @@ async function refreshSessions(): Promise<void> {
  * @param content - 本轮用户消息文本。
  * @param appendUser - true 追加新的用户气泡（首次发送）；false 仅截断到最后一条
  *   用户消息后重跑助手回答（重新生成）。
+ * @param attachments - 本轮携带的知识文件附件（ID 作为 attachment_ids 传给服务端，
+ *   强制注入其切片到当轮上下文）。
  */
-async function runTurn(content: string, appendUser: boolean): Promise<void> {
+async function runTurn(
+  content: string,
+  appendUser: boolean,
+  attachments?: ChatAttachment[]
+): Promise<void> {
   const get = useChatStore.getState;
   const set = useChatStore.setState;
   const { workspaceId, activeSessionId, streaming } = get();
@@ -289,7 +307,12 @@ async function runTurn(content: string, appendUser: boolean): Promise<void> {
   const nextMessages: ChatMessage[] = appendUser
     ? [
         ...baseMessages,
-        { key: `local-${(localKeySeq += 1)}`, role: "user", content },
+        {
+          key: `local-${(localKeySeq += 1)}`,
+          role: "user",
+          content,
+          ...(attachments && attachments.length > 0 ? { attachments } : {}),
+        },
         { key: `local-${(localKeySeq += 1)}`, role: "assistant", content: "" },
       ]
     : [...baseMessages, { key: `local-${(localKeySeq += 1)}`, role: "assistant", content: "" }];
@@ -320,6 +343,7 @@ async function runTurn(content: string, appendUser: boolean): Promise<void> {
       workspaceId,
       sessionId: activeSessionId ?? undefined,
       content,
+      attachmentIds: attachments?.map((a) => a.id),
       signal: controller.signal,
       handlers: {
         onSessionId: (sessionId) => {

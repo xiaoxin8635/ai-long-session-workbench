@@ -152,6 +152,39 @@ describe("chat store", () => {
     expect(state.messages[1]!.failed).toBeUndefined();
   });
 
+  it("sendMessage 携带附件：attachment_ids 传参且用户气泡记录附件", async () => {
+    await bootstrapWithEmptySessions();
+    streamChatMock.mockImplementation(async (params) => {
+      params.handlers.onSessionId("s-att");
+      params.handlers.onFinish({ citations: [], pendingConfirmation: null });
+    });
+
+    const attachments = [
+      { id: "file-1", filename: "quarterly.xlsx" },
+      { id: "file-2", filename: "notes.md" },
+    ];
+    await useChatStore.getState().sendMessage("看看这些", attachments);
+
+    const arg = streamChatMock.mock.calls[0]![0];
+    expect(arg.attachmentIds).toEqual(["file-1", "file-2"]);
+    const userMsg = useChatStore.getState().messages[0]!;
+    expect(userMsg.role).toBe("user");
+    expect(userMsg.attachments).toEqual(attachments);
+  });
+
+  it("sendMessage 无附件时不传 attachmentIds", async () => {
+    await bootstrapWithEmptySessions();
+    streamChatMock.mockImplementation(async (params) => {
+      params.handlers.onFinish({ citations: [], pendingConfirmation: null });
+    });
+
+    await useChatStore.getState().sendMessage("纯文本");
+
+    const arg = streamChatMock.mock.calls[0]![0];
+    expect(arg.attachmentIds).toBeUndefined();
+    expect(useChatStore.getState().messages[0]!.attachments).toBeUndefined();
+  });
+
   it("流式期间拒绝重复发送", async () => {
     await bootstrapWithEmptySessions();
     let release: (() => void) | undefined;

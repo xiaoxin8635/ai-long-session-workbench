@@ -14,6 +14,7 @@
 
 import logging
 import uuid
+from collections.abc import Sequence
 from dataclasses import replace
 from typing import Any
 
@@ -317,6 +318,7 @@ class ContextBuilder:
         query: str,
         profile: str | None = None,
         system_prompt: str = DEFAULT_SYSTEM_PROMPT,
+        attachment_ids: Sequence[uuid.UUID] | None = None,
     ) -> AssembledContext:
         """取数 + 装配：摘要/记忆检索/窗口 → 候选集 → assemble。
 
@@ -328,6 +330,8 @@ class ContextBuilder:
             query: 当前用户问题（记忆检索的查询）。
             profile: 预算 profile；None 用配置默认。
             system_prompt: 系统提示覆盖（默认 DEFAULT_SYSTEM_PROMPT）。
+            attachment_ids: 本轮聊天附件的知识文件 ID；其切片以高分强制注入
+                RAG 区块（用户显式附上的内容优先于 query 相关性检索命中）。
 
         Returns:
             装配结果；检索/窗口失败自动降级，绝不抛出阻断对话。
@@ -421,6 +425,20 @@ class ContextBuilder:
             except Exception as exc:
                 logger.warning("context_rag_degraded error=%s", exc)
                 rag_hits = []
+
+        # ②.6 聊天附件强制注入（用户本轮显式附上的文件，直取全部切片并以高分
+        # 置顶，优先于 query 相关性检索命中；失败降级为空，不阻断对话）
+        if self._knowledge is not None and attachment_ids:
+            try:
+                forced = await self._knowledge.fetch_by_file_ids(
+                    db, ws_id=ws_id, file_ids=list(attachment_ids)
+                )
+            except Exception as exc:
+                logger.warning("context_attachment_degraded error=%s", exc)
+                forced = []
+            forced_ids = {c.chunk_id for c in forced}
+            rag_hits = [*forced, *[c for c in rag_hits if c.chunk_id not in forced_ids]]
+
         for cited in rag_hits:
             buckets[SectionKey.RAG].append(
                 ContextItem(

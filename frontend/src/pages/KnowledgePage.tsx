@@ -1,12 +1,16 @@
 /**
  * 知识库页（EchoDesk 前端 · 「宣纸书卷」古风，M-F5）。
  *
- * 文档上传（pdf/docx/md/txt ≤20MB）+ 状态机列表（parsing 自动轮询到
+ * 文档上传（pdf/docx/md/txt/csv/xlsx ≤20MB）+ 状态机列表（parsing 自动轮询到
  * embedded/failed）+ 撤销式删除 + 检索调试（与 chat RAG 区块同口径）。
  */
 import { useEffect, useRef, useState, type JSX } from "react";
 import { Search, Upload, X } from "lucide-react";
-import type { KnowledgeFile, KnowledgeFileStatus } from "../api/knowledge";
+import {
+  ACCEPT_EXTENSIONS,
+  type KnowledgeFile,
+  type KnowledgeFileStatus,
+} from "../api/knowledge";
 import { useKnowledgeStore } from "../stores/knowledge";
 import { showToast } from "../stores/toast";
 
@@ -149,7 +153,7 @@ export default function KnowledgePage(): JSX.Element {
         <input
           ref={fileInputRef}
           type="file"
-          accept=".pdf,.docx,.md,.txt"
+          accept={ACCEPT_EXTENSIONS}
           className="hidden"
           onChange={(e) => onFilePicked(e.target.files)}
         />
@@ -163,7 +167,7 @@ export default function KnowledgePage(): JSX.Element {
           {uploading ? "上传解析中…" : "上传文档"}
         </button>
         <p className="mt-2.5 text-xs text-muted">
-          支持 pdf / docx / md / txt，≤20MB；上传后同步解析切片，向量化后台完成
+          支持 pdf / docx / md / txt / csv / xlsx，≤20MB；上传后同步解析切片，向量化后台完成
         </p>
       </div>
 

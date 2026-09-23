@@ -61,6 +61,7 @@ class GraphContext:
         tools: OpenAI tools 参数（空列表 = 本轮禁用工具循环）。
         on_delta: 正文增量回调（SSE bridge 推流；非流式传收集器）。
         on_event: 结构化事件回调（如 tool_call 确认请求推送）。
+        attachment_ids: 本轮聊天附件的知识文件 ID（load_context 强制注入切片）。
         assembled: load_context 的装配结果（postprocess 用量明细来源）。
     """
 
@@ -74,6 +75,7 @@ class GraphContext:
     tools: list[dict[str, Any]]
     on_delta: Callable[[str], Awaitable[None]]
     on_event: Callable[[str, dict[str, Any]], Awaitable[None]]
+    attachment_ids: list[uuid.UUID] = field(default_factory=list)
     assembled: AssembledContext | None = field(default=None)
 
 

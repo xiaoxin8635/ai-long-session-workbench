@@ -81,6 +81,33 @@ def _citations(cited_chunks: tuple) -> list[Citation]:
     return [Citation.from_cited(cited) for cited in cited_chunks]
 
 
+def _parse_attachment_ids(raw: list[str] | None) -> list[uuid_mod.UUID]:
+    """解析 metadata.attachment_ids（字符串 → UUID）。
+
+    Args:
+        raw: 客户端传入的附件文件 ID 列表；None/空表示本轮无附件。
+
+    Returns:
+        合法 UUID 列表（保持顺序，自动去重）。
+
+    Raises:
+        AppError: 含非法 UUID（422，客户端参数错误）。
+    """
+    if not raw:
+        return []
+    parsed: list[uuid_mod.UUID] = []
+    seen: set[uuid_mod.UUID] = set()
+    for item in raw:
+        try:
+            fid = uuid_mod.UUID(item)
+        except (ValueError, AttributeError, TypeError) as exc:
+            raise AppError("invalid_attachment_id", 422, f"附件 ID 非法: {item}") from exc
+        if fid not in seen:
+            seen.add(fid)
+            parsed.append(fid)
+    return parsed
+
+
 def _thread_config(ws_id: uuid_mod.UUID, session_id: uuid_mod.UUID, ctx: GraphContext) -> dict:
     """构造 LangGraph 运行配置（thread_id 保证会话级 checkpoint 隔离）。
 
@@ -117,6 +144,7 @@ class _AgentBridge:
         service: ChatService,
         llm: object,
         enable_tools: bool,
+        attachment_ids: list[uuid_mod.UUID] | None = None,
     ) -> None:
         """保存执行依赖并初始化事件队列。
 
@@ -130,6 +158,7 @@ class _AgentBridge:
             service: chat 用例编排（装配与收尾复用）。
             llm: LLM 客户端。
             enable_tools: 是否注入工具参数。
+            attachment_ids: 本轮附件的知识文件 ID（强制注入其切片）。
         """
         self._db = db
         self._ws_id = ws_id
@@ -140,6 +169,7 @@ class _AgentBridge:
         self._service = service
         self._llm = llm
         self._tools = openai_tools_schema() if enable_tools else []
+        self._attachment_ids = attachment_ids or []
         self._queue: asyncio.Queue[tuple[str, Any] | None] = asyncio.Queue()
         self._ctx: GraphContext | None = None
 
@@ -169,6 +199,7 @@ class _AgentBridge:
                 tools=self._tools,
                 on_delta=self._on_delta,
                 on_event=self._on_event,
+                attachment_ids=self._attachment_ids,
             )
         return self._ctx
 
@@ -288,6 +319,7 @@ async def chat_completions(payload: ChatCompletionRequest, user: CurrentUser, db
     completion_id = f"chatcmpl-{uuid_mod.uuid4().hex}"
     created = int(time.time())
     query = payload.messages[-1].content
+    attachment_ids = _parse_attachment_ids(payload.metadata.attachment_ids)
     bridge = _AgentBridge(
         db,
         ws_id=ws_id,
@@ -298,6 +330,7 @@ async def chat_completions(payload: ChatCompletionRequest, user: CurrentUser, db
         service=service,
         llm=llm,
         enable_tools=payload.metadata.enable_tools,
+        attachment_ids=attachment_ids,
     )
     state = {
         "user_msg_id": str(user_msg_id),
