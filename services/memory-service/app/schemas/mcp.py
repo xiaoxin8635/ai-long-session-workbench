@@ -14,7 +14,7 @@ class McpServerCreate(BaseModel):
     """添加 MCP server 请求体（POST /api/mcp/servers）。
 
     字段约束与 McpServerConfig 对齐：name 限小写字母/数字/中划线，
-    http 必填 url、stdio 必填 command（服务层校验）。
+    http/sse 必填 url、stdio 必填 command（服务层校验）。
     """
 
     name: str = Field(
@@ -23,8 +23,11 @@ class McpServerCreate(BaseModel):
         pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$",
         description="全局唯一标识（工具注册名前缀 mcp.<name>.*）",
     )
-    transport: str = Field(pattern="^(http|stdio)$", description="http / stdio")
-    url: str | None = Field(default=None, max_length=2048, description="http 端点")
+    transport: str = Field(pattern="^(http|sse|stdio)$", description="http / sse / stdio")
+    url: str | None = Field(default=None, max_length=2048, description="http/sse 端点")
+    headers: dict[str, str] | None = Field(
+        default=None, description="http/sse 自定义请求头（API key 鉴权）"
+    )
     command: str | None = Field(default=None, max_length=512, description="stdio 启动命令")
     args: list[str] = Field(default_factory=list, description="stdio 命令参数")
     env: dict[str, str] | None = Field(default=None, description="stdio 额外环境变量")
@@ -39,6 +42,9 @@ class McpServerRead(BaseModel):
     name: str
     transport: str
     url: str | None = None
+    headers: dict[str, str] | None = Field(
+        default=None, description="自定义请求头（值打码为 ***，不回显密钥原文）"
+    )
     command: str | None = None
     args: list[str] = Field(default_factory=list)
     enabled: bool

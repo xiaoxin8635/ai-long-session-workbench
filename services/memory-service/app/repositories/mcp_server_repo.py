@@ -56,6 +56,7 @@ async def create_server(
     name: str,
     transport: str,
     url: str | None,
+    headers: dict[str, str] | None,
     command: str | None,
     args: list[str],
     env: dict[str, str] | None,
@@ -66,8 +67,9 @@ async def create_server(
     Args:
         db: 数据库会话。
         name: 全局唯一标识。
-        transport: http / stdio。
-        url: http 端点（可空）。
+        transport: http / sse / stdio。
+        url: 远程端点（可空）。
+        headers: 远程端点自定义请求头（可空）。
         command: stdio 命令（可空）。
         args: stdio 参数列表。
         env: stdio 额外环境变量（可空）。
@@ -80,6 +82,7 @@ async def create_server(
         name=name,
         transport=transport,
         url=url,
+        headers=headers,
         command=command,
         args=list(args),
         env=env,

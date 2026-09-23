@@ -294,3 +294,67 @@ async def test_disconnect_server_hot_removes_tools() -> None:
     finally:
         _CONNECTIONS.pop("hotdemo", None)
         default_registry.unregister_prefix("mcp.hotdemo.")
+
+
+# ---- headers 鉴权与 sse transport（托管 MCP 接入）----
+
+
+def test_config_sse_and_headers_validation() -> None:
+    """sse 需要 url；headers 仅限 dict[str,str]；未知 transport 拒绝。"""
+    config = McpServerConfig(
+        name="bailian",
+        transport="sse",
+        url="https://example.com/sse",
+        headers={"Authorization": "Bearer sk-test"},
+    )
+    assert config.headers == {"Authorization": "Bearer sk-test"}
+    with pytest.raises(ValidationError):
+        McpServerConfig(name="x", transport="sse")  # 缺 url
+    with pytest.raises(ValidationError):
+        McpServerConfig(name="x", transport="ws", url="https://example.com")
+
+
+async def test_run_injects_headers_into_transport(monkeypatch: pytest.MonkeyPatch) -> None:
+    """http 经 create_mcp_http_client(headers) 注入；sse 直传 headers 参数。"""
+    import app.tools.mcp_client as mod
+
+    captured: dict[str, Any] = {}
+
+    def fake_factory(headers: dict[str, str] | None = None, **kwargs: Any) -> object:
+        """记录 headers 并返回哨兵对象（作为 http_client 传递）。"""
+        captured["factory_headers"] = headers
+        return "SENTINEL_CLIENT"
+
+    def fake_http(url: str, *, http_client: object = None, **kwargs: Any) -> object:
+        """记录 http_client 后抛错，走 start() 的降级分支。"""
+        captured["http_client"] = http_client
+        raise RuntimeError("probe")
+
+    def fake_sse(url: str, headers: dict[str, str] | None = None, **kwargs: Any) -> object:
+        """记录 headers 后抛错，走 start() 的降级分支。"""
+        captured["sse_headers"] = headers
+        raise RuntimeError("probe")
+
+    monkeypatch.setattr(mod, "create_mcp_http_client", fake_factory)
+    monkeypatch.setattr(mod, "streamable_http_client", fake_http)
+    monkeypatch.setattr(mod, "sse_client", fake_sse)
+
+    headers = {"Authorization": "Bearer sk-test"}
+    http_conn = McpConnection(
+        McpServerConfig(name="h", transport="http", url="https://example.com/mcp", headers=headers),
+        risk=ToolRiskLevel.EXTERNAL,
+        call_timeout=5,
+        connect_timeout=2,
+    )
+    assert await http_conn.start() == []  # 降级为空清单
+    assert captured["factory_headers"] == headers
+    assert captured["http_client"] == "SENTINEL_CLIENT"
+
+    sse_conn = McpConnection(
+        McpServerConfig(name="s", transport="sse", url="https://example.com/sse", headers=headers),
+        risk=ToolRiskLevel.EXTERNAL,
+        call_timeout=5,
+        connect_timeout=2,
+    )
+    assert await sse_conn.start() == []
+    assert captured["sse_headers"] == headers

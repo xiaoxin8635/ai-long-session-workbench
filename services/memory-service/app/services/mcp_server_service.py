@@ -43,6 +43,7 @@ def _config_from_row(row: McpServer) -> McpServerConfig:
         name=row.name,
         transport=row.transport,
         url=row.url,
+        headers=row.headers,
         command=row.command,
         args=list(row.args or []),
         env=row.env,
@@ -75,6 +76,7 @@ class McpServerService:
                     name=config.name,
                     transport=config.transport,
                     url=config.url,
+                    headers=config.headers,
                     command=config.command,
                     args=list(config.args),
                     env=config.env,
@@ -83,6 +85,7 @@ class McpServerService:
             elif existing.source == "env":
                 existing.transport = config.transport
                 existing.url = config.url
+                existing.headers = config.headers
                 existing.command = config.command
                 existing.args = list(config.args)
                 existing.env = config.env
@@ -134,6 +137,7 @@ class McpServerService:
             name=payload.name,
             transport=payload.transport,
             url=payload.url,
+            headers=payload.headers,
             command=payload.command,
             args=list(payload.args),
             env=payload.env,
@@ -164,7 +168,7 @@ class McpServerService:
         await mcp_server_repo.delete_by_name(db, name)
 
     def to_read(self, row: McpServer) -> McpServerRead:
-        """配置行 → 响应体（附运行态 connected/tools）。
+        """配置行 → 响应体（附运行态 connected/tools；headers 值打码）。
 
         Args:
             row: mcp_servers 表行。
@@ -174,6 +178,8 @@ class McpServerService:
         """
         snapshot = connected_servers()
         read = McpServerRead.model_validate(row)
+        # 密钥不回显：仅保留头名，值统一打码（前端只需展示「带鉴权头」）
+        read.headers = {key: "***" for key in row.headers} if row.headers else None
         read.connected = row.name in snapshot
         read.tools = snapshot.get(row.name, [])
         return read

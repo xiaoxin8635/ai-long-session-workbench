@@ -55,6 +55,7 @@ describe("ToolsPage", () => {
         name: "demo-mcp",
         transport: "http",
         url: "http://demo:9000/mcp",
+        headers: { Authorization: "***" },
         command: null,
         args: [],
         enabled: true,
@@ -101,6 +102,7 @@ describe("ToolsPage", () => {
     render(<ToolsPage />);
     expect(await screen.findByText("demo-mcp")).toBeTruthy();
     expect(screen.getByText("已连接 · 1 工具")).toBeTruthy();
+    expect(screen.getByText("鉴权头")).toBeTruthy();
     fireEvent.click(screen.getByLabelText("移除 demo-mcp"));
     await waitFor(() => expect(removeMcpServerMock).toHaveBeenCalledWith("demo-mcp"));
   });

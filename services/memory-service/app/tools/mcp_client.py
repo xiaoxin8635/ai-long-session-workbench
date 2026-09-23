@@ -2,7 +2,8 @@
 
 连接模型：
   - 每个已配置 server 一条长连接：后台 task 持有 transport 与 ClientSession
-    的 async context（stdio / streamable HTTP 双 transport），list_tools 后
+    的 async context（stdio / streamable HTTP / SSE 三 transport，远程端点
+    支持自定义 headers 承载 API key 鉴权），list_tools 后
     以 ``mcp.<server>.<tool>`` 前缀注册进 default_registry（与 MCP tool
     定义同构适配，注册表/执行器无感）
   - 连接池按 server name 索引，支持运行期热插拔（connect_server /
@@ -26,8 +27,10 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from mcp.client.session import ClientSession
+from mcp.client.sse import sse_client
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.client.streamable_http import streamable_http_client
+from mcp.shared._httpx_utils import create_mcp_http_client
 from mcp.types import CallToolResult, TextContent
 from pydantic import (
     BaseModel,
@@ -65,8 +68,11 @@ class McpServerConfig(BaseModel):
 
     Attributes:
         name: server 标识（注册名前缀组成部分，限小写字母/数字/中划线）。
-        transport: 传输方式（http = streamable HTTP / stdio = 子进程）。
-        url: streamable HTTP 端点（http 必填）。
+        transport: 传输方式（http = streamable HTTP / sse = SSE 端点（百炼、
+            高德等托管 MCP 常用）/ stdio = 子进程）。
+        url: 远程端点（http/sse 必填）。
+        headers: 远程端点自定义请求头（http/sse 生效，承载 API key 鉴权，
+            如 {"Authorization": "Bearer sk-..."}）。
         command: stdio 启动命令（stdio 必填）。
         args: stdio 命令参数列表。
         env: stdio 子进程额外环境变量（None 时由 SDK 注入最小环境）。
@@ -76,8 +82,9 @@ class McpServerConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     name: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$")
-    transport: str = Field(pattern="^(http|stdio)$")
+    transport: str = Field(pattern="^(http|sse|stdio)$")
     url: str | None = None
+    headers: dict[str, str] | None = None
     command: str | None = None
     args: list[str] = Field(default_factory=list)
     env: dict[str, str] | None = None
@@ -88,11 +95,11 @@ class McpServerConfig(BaseModel):
         """校验 transport 与连接参数的匹配性。
 
         Raises:
-            ValueError: http 缺 url / stdio 缺 command（pydantic 包装为
+            ValueError: http/sse 缺 url / stdio 缺 command（pydantic 包装为
                 ValidationError，由 parse_server_configs 统一跳过）。
         """
-        if self.transport == "http" and not self.url:
-            raise ValueError(f"MCP server {self.name}: http transport 需要 url")
+        if self.transport in ("http", "sse") and not self.url:
+            raise ValueError(f"MCP server {self.name}: {self.transport} transport 需要 url")
         if self.transport == "stdio" and not self.command:
             raise ValueError(f"MCP server {self.name}: stdio transport 需要 command")
         return self
@@ -292,7 +299,16 @@ class McpConnection:
         """
         try:
             if self._config.transport == "http":
-                transport_ctx = streamable_http_client(self._config.url)  # type: ignore[arg-type]
+                transport_ctx = streamable_http_client(
+                    self._config.url,  # type: ignore[arg-type]
+                    http_client=(
+                        create_mcp_http_client(headers=self._config.headers)
+                        if self._config.headers
+                        else None
+                    ),
+                )
+            elif self._config.transport == "sse":
+                transport_ctx = sse_client(self._config.url, headers=self._config.headers)  # type: ignore[arg-type]
             else:
                 transport_ctx = stdio_client(
                     StdioServerParameters(

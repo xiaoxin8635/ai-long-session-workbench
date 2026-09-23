@@ -2,8 +2,9 @@
  * 工具页（EchoDesk 前端 · 「宣纸书卷」古风，M-F3）。
  *
  * 四块：工具清单（含风险分级与参数 schema）、MCP 服务管理（热插拔：
- * 添加即试连注册、移除即断连注销）、直调执行调试（external 202
- * 待确认时给确认/拒绝按钮）、调用审计（created_at 倒序，可刷新）。
+ * 添加即试连注册、移除即断连注销；支持 http/sse/stdio 三 transport，
+ * 远程端点可带鉴权请求头接百炼/高德等托管 MCP）、直调执行调试（external
+ * 202 待确认时给确认/拒绝按钮）、调用审计（created_at 倒序，可刷新）。
  */
 import { useEffect, useState, type JSX } from "react";
 import { Plus, Trash2, X } from "lucide-react";
@@ -46,9 +47,11 @@ export default function ToolsPage(): JSX.Element {
   /** MCP 添加表单：名称。 */
   const [mcpName, setMcpName] = useState("");
   /** MCP 添加表单：传输方式。 */
-  const [mcpTransport, setMcpTransport] = useState<"http" | "stdio">("http");
-  /** MCP 添加表单：http 端点。 */
+  const [mcpTransport, setMcpTransport] = useState<"http" | "sse" | "stdio">("http");
+  /** MCP 添加表单：远程端点（http/sse）。 */
   const [mcpUrl, setMcpUrl] = useState("");
+  /** MCP 添加表单：请求头 JSON 文本（http/sse 可选，承载 API key 鉴权）。 */
+  const [mcpHeadersText, setMcpHeadersText] = useState("");
   /** MCP 添加表单：stdio 命令。 */
   const [mcpCommand, setMcpCommand] = useState("");
   /** MCP 添加表单：stdio 参数（空白分隔）。 */
@@ -82,18 +85,37 @@ export default function ToolsPage(): JSX.Element {
    * 热添加 MCP server：服务端试连成功后工具即刻进入清单。
    */
   async function handleAddMcp(): Promise<void> {
+    let headers: Record<string, string> | undefined;
+    if (mcpTransport !== "stdio" && mcpHeadersText.trim() !== "") {
+      try {
+        const parsed: unknown = JSON.parse(mcpHeadersText);
+        if (
+          typeof parsed !== "object" ||
+          parsed === null ||
+          Array.isArray(parsed) ||
+          !Object.values(parsed).every((v) => typeof v === "string")
+        ) {
+          setError("请求头须为 JSON 对象（键值均为字符串）");
+          return;
+        }
+        headers = parsed as Record<string, string>;
+      } catch {
+        setError("请求头不是合法 JSON");
+        return;
+      }
+    }
     setMcpBusy(true);
     setError(null);
     try {
       const payload: mcpApi.McpServerCreatePayload = {
         name: mcpName.trim(),
         transport: mcpTransport,
-        ...(mcpTransport === "http"
-          ? { url: mcpUrl.trim() }
-          : {
+        ...(mcpTransport === "stdio"
+          ? {
               command: mcpCommand.trim(),
               args: mcpArgsText.trim() === "" ? [] : mcpArgsText.trim().split(/\s+/),
-            }),
+            }
+          : { url: mcpUrl.trim(), ...(headers !== undefined ? { headers } : {}) }),
       };
       const created = await mcpApi.addMcpServer(payload);
       showToast({
@@ -103,6 +125,7 @@ export default function ToolsPage(): JSX.Element {
       });
       setMcpName("");
       setMcpUrl("");
+      setMcpHeadersText("");
       setMcpCommand("");
       setMcpArgsText("");
       await refresh();
@@ -253,6 +276,14 @@ export default function ToolsPage(): JSX.Element {
                 >
                   {s.connected ? `已连接 · ${s.tools.length} 工具` : "未连接"}
                 </span>
+                {s.headers !== null && (
+                  <span
+                    className="rounded-md bg-accent/10 px-1.5 py-0.5 text-accent"
+                    title={`请求头：${Object.keys(s.headers).join(", ")}（值已打码）`}
+                  >
+                    鉴权头
+                  </span>
+                )}
                 <span className="truncate text-muted" title={s.url ?? s.command ?? ""}>
                   {s.source === "env" ? "env 种子" : s.url ?? s.command}
                 </span>
@@ -285,17 +316,18 @@ export default function ToolsPage(): JSX.Element {
               />
               <select
                 value={mcpTransport}
-                onChange={(e) => setMcpTransport(e.target.value as "http" | "stdio")}
+                onChange={(e) => setMcpTransport(e.target.value as "http" | "sse" | "stdio")}
                 className="input rounded-lg px-2.5 py-1.5 text-xs"
               >
                 <option value="http">http（streamable）</option>
+                <option value="sse">sse（托管端点）</option>
                 <option value="stdio">stdio（子进程）</option>
               </select>
-              {mcpTransport === "http" ? (
+              {mcpTransport !== "stdio" ? (
                 <input
                   value={mcpUrl}
                   onChange={(e) => setMcpUrl(e.target.value)}
-                  placeholder="http://host:port/mcp"
+                  placeholder={mcpTransport === "sse" ? "https://host/sse" : "http://host:port/mcp"}
                   className="input min-w-0 flex-1 rounded-lg px-2.5 py-1.5 font-mono text-xs"
                 />
               ) : (
@@ -324,6 +356,15 @@ export default function ToolsPage(): JSX.Element {
                 {mcpBusy ? "接入中…" : "添加"}
               </button>
             </div>
+            {mcpTransport !== "stdio" && (
+              <input
+                value={mcpHeadersText}
+                onChange={(e) => setMcpHeadersText(e.target.value)}
+                placeholder='请求头 JSON（可选，如 {"Authorization": "Bearer sk-..."}）'
+                aria-label="请求头 JSON"
+                className="input w-full rounded-lg px-2.5 py-1.5 font-mono text-xs"
+              />
+            )}
             <p className="text-xs text-muted">添加时服务端立即试连并注册工具；连接失败不会保存配置。</p>
           </div>
         </div>

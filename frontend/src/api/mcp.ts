@@ -14,10 +14,12 @@ export interface McpServerInfo {
   /** 全局唯一标识（工具名前缀 mcp.<name>.*）。 */
   name: string;
   /** 传输方式。 */
-  transport: "http" | "stdio";
-  /** http 端点（stdio 为 null）。 */
+  transport: "http" | "sse" | "stdio";
+  /** 远程端点（http/sse；stdio 为 null）。 */
   url: string | null;
-  /** stdio 启动命令（http 为 null）。 */
+  /** 自定义请求头（值已由服务端打码为 ***；无则 null）。 */
+  headers: Record<string, string> | null;
+  /** stdio 启动命令（http/sse 为 null）。 */
   command: string | null;
   /** stdio 命令参数。 */
   args: string[];
@@ -38,9 +40,11 @@ export interface McpServerCreatePayload {
   /** 全局唯一标识（小写字母/数字/中划线）。 */
   name: string;
   /** 传输方式。 */
-  transport: "http" | "stdio";
-  /** http 端点（transport=http 必填）。 */
+  transport: "http" | "sse" | "stdio";
+  /** 远程端点（transport=http/sse 必填）。 */
   url?: string;
+  /** 自定义请求头（http/sse 生效，承载 API key 鉴权）。 */
+  headers?: Record<string, string>;
   /** stdio 启动命令（transport=stdio 必填）。 */
   command?: string;
   /** stdio 命令参数。 */

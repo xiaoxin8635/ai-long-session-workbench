@@ -4,6 +4,7 @@
   - 鉴权（401）与清单空态
   - 热添加成功流（201 → 清单可见 → 重名 409 → 删除 204 → 404）
   - 配置不合法 422（http 缺 url）
+  - sse + 鉴权头添加（DB 存原值，API 回显打码）
   - 试连失败 502 且不落库（必拒绝端口，真实 connect_server）
   - env 种子行不可经 API 删除（400）
   - bootstrap：env 配置种子进表 / 消失后清理
@@ -86,6 +87,30 @@ async def test_add_invalid_config_422(client: AsyncClient, fake_connect: None) -
     assert resp.json()["title"] == "mcp_config_invalid"
 
 
+async def test_add_with_headers_masked_on_read(client: AsyncClient, fake_connect: None) -> None:
+    """sse + 鉴权头添加成功：DB 存原值，API 回显值打码为 ***（密钥不外泄）。"""
+    auth = await _auth(client)
+    payload = {
+        "name": "bailian",
+        "transport": "sse",
+        "url": "https://example.com/sse",
+        "headers": {"Authorization": "Bearer sk-secret"},
+    }
+    created = await client.post("/api/mcp/servers", json=payload, headers=auth)
+    assert created.status_code == 201
+    assert created.json()["headers"] == {"Authorization": "***"}
+
+    listing = await client.get("/api/mcp/servers", headers=auth)
+    assert listing.json()[0]["headers"] == {"Authorization": "***"}
+
+    factory = get_session_factory()
+    async with factory() as db:
+        row = await mcp_server_repo.get_by_name(db, "bailian")
+        assert row is not None
+        assert row.headers == {"Authorization": "Bearer sk-secret"}  # 落库存原值
+        assert row.transport == "sse"
+
+
 async def test_add_connect_failure_502_not_persisted(client: AsyncClient) -> None:
     """试连失败（必拒绝端口）：502 且不落库（真实 connect_server）。"""
     headers = await _auth(client)
@@ -108,6 +133,7 @@ async def test_env_row_delete_rejected(client: AsyncClient) -> None:
             name="seeded",
             transport="stdio",
             url=None,
+            headers=None,
             command="echo",
             args=[],
             env=None,

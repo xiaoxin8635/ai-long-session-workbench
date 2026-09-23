@@ -17,9 +17,10 @@ class McpServer(UUIDMixin, TimestampMixin, Base):
 
     Attributes:
         name: 全局唯一标识（注册名前缀 mcp.<name>.*，限小写字母/数字/中划线）。
-        transport: http（streamable HTTP）/ stdio（子进程）。
-        url: http transport 的端点（stdio 时为 None）。
-        command: stdio transport 的启动命令（http 时为 None）。
+        transport: http（streamable HTTP）/ sse（SSE 端点）/ stdio（子进程）。
+        url: 远程端点（http/sse；stdio 时为 None）。
+        headers: 远程端点自定义请求头（API key 鉴权；读取接口打码不回显原值）。
+        command: stdio transport 的启动命令（http/sse 时为 None）。
         args: stdio 命令参数列表。
         env: stdio 子进程额外环境变量（None 时由 SDK 注入最小环境）。
         enabled: 是否启用（False 时启动期跳过连接）。
@@ -31,6 +32,7 @@ class McpServer(UUIDMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     transport: Mapped[str] = mapped_column(String(8), nullable=False)
     url: Mapped[str | None] = mapped_column(String(2048))
+    headers: Mapped[dict | None] = mapped_column(JSONB)
     command: Mapped[str | None] = mapped_column(String(512))
     args: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
     env: Mapped[dict | None] = mapped_column(JSONB)
