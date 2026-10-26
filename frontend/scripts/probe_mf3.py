@@ -4,7 +4,8 @@
 流程：注册/登录 → GET /api/tools 清单 → 流式对话诱导 web.fetch（external）
 → 断言 SSE tool_call 事件 → /v1/chat/resume approve=true 续传 → 审计核对
 success；再来一轮 resume approve=false → 审计核对 denied。
-经 http://localhost:3200 vite proxy，trust_env=False 绕过系统代理。
+经 http://127.0.0.1:3000 web 容器反代，trust_env=False 绕过系统代理。
+（M-F6 起前端由 web 容器接管 3000，原 vite dev 3200 地址已废弃）
 """
 import json
 import sys
@@ -12,7 +13,7 @@ import uuid
 
 import httpx
 
-BASE = "http://localhost:3200"
+BASE = "http://127.0.0.1:3000"
 USERNAME = "mf3_probe_" + uuid.uuid4().hex[:8]
 PASSWORD = "Probe#2026@f3"
 

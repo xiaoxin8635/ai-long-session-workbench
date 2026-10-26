@@ -4,7 +4,8 @@
 流程：注册/登录 → 非流式对话植入事实（触发抽取队列）→ 轮询列表等落库 →
 检索测试（同对话链路检索器）→ 用户编辑（version+1）→ 上下文装配预览 →
 软删除复核。冲突裁决（resolve）依赖真实冲突难确定性构造，由单测覆盖。
-经 http://localhost:3200 vite proxy，trust_env=False 绕过系统代理。
+经 http://127.0.0.1:3000 web 容器反代，trust_env=False 绕过系统代理。
+（M-F6 起前端由 web 容器接管 3000，原 vite dev 3200 地址已废弃）
 """
 import json
 import sys
@@ -13,7 +14,7 @@ import uuid
 
 import httpx
 
-BASE = "http://localhost:3200"
+BASE = "http://127.0.0.1:3000"
 USERNAME = "mf4_probe_" + uuid.uuid4().hex[:8]
 PASSWORD = "Probe#2026@f4"
 

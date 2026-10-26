@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
-"""M-F2 实机验证探针：经 vite dev proxy(3200) 走完整链路。
+"""M-F2 实机验证探针：经 web 容器(Nginx 反代, 3000) 走完整链路。
 
 流程：注册/登录探针账号 → 拉 workspace → POST /v1/chat/completions 流式
 （校验 session_id 捕获 / delta 增量 / finish 收敛）→ 回读会话列表与消息历史
-（校验自动建会话与历史回放）。全部请求经 http://127.0.0.1:3200，验证代理转发。
+（校验自动建会话与历史回放）。全部请求经 http://127.0.0.1:3000，验证反代转发。
+（M-F6 起前端由 web 容器接管 3000，原 vite dev 3200 地址已废弃）
 """
 import json
 import sys
@@ -12,7 +13,7 @@ import uuid
 
 import httpx
 
-BASE = "http://localhost:3200"
+BASE = "http://127.0.0.1:3000"
 USERNAME = "mf2_probe_" + uuid.uuid4().hex[:8]
 PASSWORD = "Probe#2026@f2"
 

@@ -4,8 +4,9 @@
 流程：注册探针账号 → 非流式对话一轮（供用量统计）→ 任务创建与状态流转
 （open → doing → done + 过滤）→ 知识文件上传（multipart）→ 轮询 parsing →
 embedded → 检索命中 → 删除 → 用量汇总（turns/token 非零）→ 成员管理
-（注册第二用户并添加为 member）。经 http://localhost:3200 vite proxy，
+（注册第二用户并添加为 member）。经 http://127.0.0.1:3000 web 容器反代，
 trust_env=False 绕过系统代理。
+（M-F6 起前端由 web 容器接管 3000，原 vite dev 3200 地址已废弃）
 """
 import io
 import sys
@@ -14,7 +15,7 @@ import uuid
 
 import httpx
 
-BASE = "http://localhost:3200"
+BASE = "http://127.0.0.1:3000"
 USERNAME = "mf5_probe_" + uuid.uuid4().hex[:8]
 PASSWORD = "Probe#2026@f5"
 USER_B = "mf5b_" + uuid.uuid4().hex[:8]
