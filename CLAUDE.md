@@ -42,6 +42,57 @@ docs/                       # 所有技术文档
 config/                     # 预算策略等 YAML 配置
 ```
 
+## OpenSpec 规范驱动开发（前置强制）
+
+本项目采用 OpenSpec 做规范驱动开发（SDD）。**改动任何业务代码前必须先走 OpenSpec 流程**，禁止跳过直接写码。
+
+### 铁律
+
+1. 动手写码前先确认 `openspec\changes\` 下存在本次改动对应的 change；没有就先创建（`openspec-propose` 或 `openspec-new-change`）
+2. change 内的 `proposal.md` / `design.md` / `specs\` / `tasks.md` 须经用户确认后，才可用 `openspec-apply-change` 实施
+3. 禁止在创建变更的过程中顺带写业务代码；`openspec init` 不得擅自执行（本项目已初始化，勿重复）
+4. `openspec\specs\` 下 12 个域的规范是**基线**，任何偏离都必须在 delta spec 中显式声明（ADDED / MODIFIED / REMOVED）
+
+### 标准流程
+
+AI 侧用 slash 命令，终端侧用 openspec CLI，两者不可混淆：
+
+```
+explore（可选，先想清楚） → propose（产出提案与 delta spec，等确认） → apply（按 tasks.md 实现） → verify → archive（合并进 specs\）
+```
+
+### 已安装 skill（位于 `.workbuddy\skills\`，依赖 openspec CLI v1.15.0）
+
+| Skill | 何时用 |
+|---|---|
+| `openspec-onboard` | 首次接触 OpenSpec，或需走一遍完整周期演示 |
+| `openspec-explore` | **只读思考**：理清需求、勘察代码；明确不许实现任何代码 |
+| `openspec-propose` | 一步生成全套变更产物（最常用入口） |
+| `openspec-new-change` | 按产物逐步创建变更 |
+| `openspec-ff-change` | 快速通道，跳过中间确认直接产出全部产物 |
+| `openspec-continue-change` | 接着未完成的变更，继续产出下一件产物 |
+| `openspec-update-change` | 变更范围变了，修订已有产物并保持互相一致 |
+| `openspec-apply-change` | **真正写代码的入口**：按 tasks.md 实施 |
+| `openspec-verify-change` | 校验实现与 change 产物是否一致 |
+| `openspec-sync-specs` | 把 delta spec 同步进主 specs |
+| `openspec-archive-change` | 完成后归档（按需同步主规范） |
+| `openspec-bulk-archive-change` | 批量归档多个并行变更 |
+
+### 常用命令
+
+```bash
+openspec list                    # 查看活跃变更
+openspec status --change <name>  # 查看变更进度与下一件待产出物
+openspec validate --all          # 校验全部 specs（改动后必跑）
+openspec archive <name>          # 归档变更
+```
+
+### 规范基线与写作约定
+
+- 现有基线共 12 个域：`memory-layered`、`context-assembly`、`rolling-summary`、`auth`、`sessions`、`tenant-isolation`、`knowledge-rag`、`tools-mcp`、`agent-orchestration`、`frontend-workbench`、`usage-observability`、`deployment`
+- `openspec\config.yaml` 已设为简体中文：**正文用中文**，但结构性标题（`## Purpose` / `## Requirements` / `### Requirement:` / `#### Scenario:`）与 RFC 2119 关键词（SHALL / MUST / SHOULD、GIVEN / WHEN / THEN / AND）**必须保持英文**，否则校验失败
+- 每个 Requirement 需配 2~3 个**可验证**的 Scenario（能据此写出自动化测试），并覆盖边界与降级路径
+
 ## 代码规范（摘要，完整版见 docs\02-开发规范.md）
 
 1. **注释**：每个新文件必须有文件级 docstring；每个类必须有类级 docstring；每个函数/方法必须有函数级 docstring（含 Args / Returns / Raises）
