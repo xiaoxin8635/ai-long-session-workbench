@@ -63,3 +63,10 @@ desktop.ini
 evals/reports/local/
 tmp/
 .cache/
+
+# ===== AI 工具 / IDE 私有数据 =====
+# WorkBuddy：skills 副本随仓库分发（CLAUDE.md 的 OpenSpec 工作流依赖它）；
+# memory/ 是本机会话记忆，含绝对路径等环境信息，不入库
+.workbuddy/memory/
+# Qoder IDE 私有插件配置
+.qoder/

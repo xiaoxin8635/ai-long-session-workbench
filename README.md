@@ -55,8 +55,6 @@
 | Langfuse 观测接入 | 自研 |
 | 评测集与脚本 | 自研 |
 
-> 历史说明：早期（阶段1）曾采用 [Open WebUI](https://github.com/open-webui/open-webui) 官方镜像（未修改其源码）+ 自研 Pipe 桥接函数作为产品壳验证链路；阶段2 起替换为上述自研前端，Open WebUI 容器与 Pipe 已退役（Pipe 脚本归档于 `deploy/pipes/` 供追溯）。仓库不含 Open WebUI 源码，无二开代码，不涉及其 license 义务。
-
 ## 快速开始
 
 依赖：Docker Desktop（含 WSL2 后端）。
@@ -90,4 +88,3 @@ docker exec workbench-memory alembic upgrade head
 ## License 说明
 
 - 全部代码（`frontend/`、`services/memory-service/`、`deploy/` 等）均为自研：个人项目，以 [MIT](LICENSE) 发布
-- Open WebUI：仓库不含其源码、无二开代码（阶段1 仅官方镜像运行 + 自研 Pipe 脚本桥接），不涉及上游 license 义务；Pipe 脚本为自研代码
