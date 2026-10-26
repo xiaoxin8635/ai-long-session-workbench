@@ -363,6 +363,117 @@ async def test_ingest_pipeline_fills_embeddings(
         assert chunks == []  # 无待补向量切片
 
 
+class ExplodingEmbedding:
+    """恒失败假实现（验证摄取失败时转 FAILED 并同步下线切片）。"""
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        """Raises: EmbeddingError: 恒定失败。"""
+        raise EmbeddingError("embedding down")
+
+
+async def test_ingest_failure_marks_failed_and_clears_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """摄取失败：状态转 failed，且切片 embedding/tokens 被双清（与 superseded 对称）。"""
+    async with get_session_factory()() as db:
+        ws_id = await _seed_workspace(db)
+        file_id = await _seed_chunks(
+            db,
+            ws_id,
+            "failed.md",
+            [
+                {"index": 0, "content": "摄取失败不该被召回的内容", "tokens": ["失败"]},
+                {
+                    "index": 1,
+                    "content": "另一段回填过向量的内容",
+                    "tokens": ["失败"],
+                    "embedding": [0.9] + [0.0] * (_DIM - 1),  # 部分批次已回填也要清
+                },
+            ],
+        )
+    monkeypatch.setattr("app.rag.ingest.get_embedding_client", lambda: ExplodingEmbedding())
+    await ingest_embeddings(file_id)
+
+    async with get_session_factory()() as db:
+        file = await knowledge_repo.get_file_by_id(db, file_id)
+        assert file is not None and file.status == KnowledgeFileStatus.FAILED
+        chunks = await knowledge_repo.list_chunks(db, file_id=file_id)
+        assert len(chunks) == 2
+        assert all(chunk.embedding is None for chunk in chunks)
+        assert all(chunk.tokens == [] for chunk in chunks)
+        # BM25 语料里不再出现该文件的任何切片
+        corpus_ids = {cid for cid, _ in await knowledge_repo.load_corpus_tokens(db, ws_id=ws_id)}
+        assert not ({chunk.id for chunk in chunks} & corpus_ids)
+
+
+async def test_retriever_excludes_failed_files() -> None:
+    """failed 文件的切片双路均不召回——即便其 tokens 与 embedding 都还完整。
+
+    贴近线上曾出现的形态：摄取失败时旧代码不清 key，语料里留着可用 tokens。
+    """
+    async with get_session_factory()() as db:
+        ws_id = await _seed_workspace(db)
+        good_tokens = tokenize_for_index("知识库混合检索架构的可召回内容")
+        await _seed_chunks(
+            db,
+            ws_id,
+            "good.md",
+            [
+                {
+                    "index": 0,
+                    "content": "知识库混合检索架构的可召回内容",
+                    "tokens": good_tokens,
+                    "embedding": [1.0] + [0.0] * (_DIM - 1),
+                }
+            ],
+        )
+        # 中性文档：避免小语料里「查询词命中全部文档」导致 BM25 idf 退化为 0 分
+        # （rank_bm25 的已知行为），否则 hits 会因零分整体被过滤而掩盖真实结论
+        await _seed_chunks(
+            db,
+            ws_id,
+            "neutral.md",
+            [
+                {
+                    "index": 0,
+                    "content": "完全无关的闲聊日常内容",
+                    "tokens": tokenize_for_index("完全无关的闲聊日常内容"),
+                    "embedding": [0.0, 1.0] + [0.0] * (_DIM - 2),
+                }
+            ],
+        )
+        failed_id = await _seed_chunks(
+            db,
+            ws_id,
+            "failed.md",
+            [
+                {
+                    "index": 0,
+                    "content": "失败文件里关于知识库混合检索的内容",
+                    "tokens": tokenize_for_index("失败文件里关于知识库混合检索的内容"),
+                    "embedding": [1.0] + [0.0] * (_DIM - 1),
+                }
+            ],
+        )
+        # 直接置 failed（不动切片），模拟未经双清的历史失败记录
+        failed_file = await knowledge_repo.get_file_by_id(db, failed_id)
+        assert failed_file is not None
+        failed_file.status = KnowledgeFileStatus.FAILED
+        await db.commit()
+
+        # 纯 BM25 路：词法命中的失败文件切片不得出现
+        lexical = KnowledgeRetriever(embedding=None, rerank=None)
+        hits = await lexical.search(db, ws_id=ws_id, query="知识库混合检索")
+        assert [hit.filename for hit in hits] == ["good.md"]
+
+        # 向量 + BM25 双路：向量同样命中的失败文件切片被排除
+        hybrid = KnowledgeRetriever(embedding=FakeEmbedding(), rerank=None)
+        hits2 = await hybrid.search(db, ws_id=ws_id, query="知识库混合检索")
+        assert hits2
+        assert "failed.md" not in [hit.filename for hit in hits2]
+        assert "good.md" in [hit.filename for hit in hits2]
+
+
 # ---- API 链路（上传/列表/检索/删除）----
 
 

@@ -1,8 +1,8 @@
 """知识库仓储（M-07，docs/06 §9）。
 
-向量检索免 join 设计：supersede 时把旧版 chunks 的 embedding 置 NULL、
-tokens 置空（BM25 路同步下线），两条检索路均以 chunk 行自身状态过滤，
-无需回查 knowledge_files.status。删除为硬删（CASCADE chunks）。
+隔离与可见性：workspace_id 冗余在 chunk 行上做隔离过滤；检索可见性由所属文件
+的生命周期状态判定，`failed` 与 `superseded` 状态的文件切片在向量路与 BM25 路
+一律不召回，见常量 RETRIEVAL_EXCLUDED_STATUSES。删除为硬删（CASCADE chunks）。
 """
 
 import uuid
@@ -13,6 +13,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import KnowledgeFileStatus
 from app.models.knowledge import KnowledgeChunk, KnowledgeFile
+
+# 不可被检索召回的文件状态（下线终态）。判定统一 here，避免各出口各自为政。
+RETRIEVAL_EXCLUDED_STATUSES: tuple[KnowledgeFileStatus, ...] = (
+    KnowledgeFileStatus.FAILED,
+    KnowledgeFileStatus.SUPERSEDED,
+)
 
 
 async def create_file_with_chunks(
@@ -155,6 +161,23 @@ async def find_latest_by_filename(
     return result.scalar_one_or_none()
 
 
+async def clear_retrieval_keys(db: AsyncSession, *, file_id: uuid.UUID) -> None:
+    """清空文件全部切片的检索键（向量路 + BM25 路同步下线）。
+
+    用于文件转入下线终态（SUPERSEDED / FAILED）时，与状态改写在**同一事务**
+    内提交，保证两条下线路径行为一致；调用方负责随后 commit。
+
+    Args:
+        db: 数据库会话。
+        file_id: 目标文件 ID。
+    """
+    await db.execute(
+        update(KnowledgeChunk)
+        .where(KnowledgeChunk.file_id == file_id)
+        .values(embedding=None, tokens=[])
+    )
+
+
 async def mark_superseded(db: AsyncSession, file: KnowledgeFile) -> None:
     """旧版本下线：status=SUPERSEDED + 切片检索键双清（向量 + 分词）。
 
@@ -165,11 +188,7 @@ async def mark_superseded(db: AsyncSession, file: KnowledgeFile) -> None:
         file: 被新版本替代的旧文件（原地更新 status）。
     """
     file.status = KnowledgeFileStatus.SUPERSEDED
-    await db.execute(
-        update(KnowledgeChunk)
-        .where(KnowledgeChunk.file_id == file.id)
-        .values(embedding=None, tokens=[])
-    )
+    await clear_retrieval_keys(db, file_id=file.id)
 
 
 async def delete_file(db: AsyncSession, file: KnowledgeFile) -> None:
@@ -180,11 +199,14 @@ async def delete_file(db: AsyncSession, file: KnowledgeFile) -> None:
 async def vector_search(
     db: AsyncSession, *, ws_id: uuid.UUID, embedding: list[float], limit: int
 ) -> list[tuple[KnowledgeChunk, float]]:
-    """向量召回：workspace 内余弦近邻 top-k（embedding 非空自动排除下线版本）。
+    """向量召回：workspace 内余弦近邻 top-k（排除下线终态文件的切片）。
+
+    可见性判据：join knowledge_files 排除 `failed`/`superseded` 状态的切片，
+    embedding 为 NULL 的切片随 SQL 条件自然排除。
 
     Args:
         db: 数据库会话。
-        ws_id: workspace 隔离（chunk 冗余列，免 join file 表）。
+        ws_id: workspace 隔离（chunk 冗余列）。
         embedding: 查询向量。
         limit: 召回条数。
 
@@ -194,9 +216,11 @@ async def vector_search(
     similarity = 1 - KnowledgeChunk.embedding.cosine_distance(embedding)
     result = await db.execute(
         select(KnowledgeChunk, similarity.label("sim"))
+        .join(KnowledgeFile, KnowledgeFile.id == KnowledgeChunk.file_id)
         .where(
             KnowledgeChunk.workspace_id == ws_id,
             KnowledgeChunk.embedding.is_not(None),
+            KnowledgeFile.status.notin_(RETRIEVAL_EXCLUDED_STATUSES),
         )
         .order_by(KnowledgeChunk.embedding.cosine_distance(embedding))
         .limit(limit)
@@ -207,7 +231,9 @@ async def vector_search(
 async def load_corpus_tokens(
     db: AsyncSession, *, ws_id: uuid.UUID
 ) -> list[tuple[uuid.UUID, list[str]]]:
-    """加载 BM25 语料（全量在库切片的预分词；空 tokens 视为已下线）。
+    """加载 BM25 语料（下线终态文件之外的全量预分词切片）。
+
+    过滤条件为「tokens 非空」且「所属文件状态不在排除集」；空 tokens 视为已下线。
 
     Args:
         db: 数据库会话。
@@ -217,9 +243,12 @@ async def load_corpus_tokens(
         (chunk_id, tokens) 列表。
     """
     result = await db.execute(
-        select(KnowledgeChunk.id, KnowledgeChunk.tokens).where(
+        select(KnowledgeChunk.id, KnowledgeChunk.tokens)
+        .join(KnowledgeFile, KnowledgeFile.id == KnowledgeChunk.file_id)
+        .where(
             KnowledgeChunk.workspace_id == ws_id,
             func.jsonb_array_length(KnowledgeChunk.tokens) > 0,
+            KnowledgeFile.status.notin_(RETRIEVAL_EXCLUDED_STATUSES),
         )
     )
     return [(row[0], list(row[1])) for row in result.all()]

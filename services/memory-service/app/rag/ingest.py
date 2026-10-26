@@ -54,12 +54,20 @@ async def ingest_embeddings(file_id: uuid.UUID) -> None:
 
 
 async def _mark_failed(file_id: uuid.UUID) -> None:
-    """独立会话把文件置 FAILED（原会话可能已随异常失效；仅 PARSING 时生效）。"""
+    """独立会话把文件置 FAILED 并同步下线其切片（原会话可能已随异常失效）。
+
+    与 superseded 保持一致：状态改写与检索键双清在同一会话、同一 commit 内完成，
+    避免留下「已标失败却仍可被检索召回」的不一致状态。仅 PARSING 时生效。
+
+    Args:
+        file_id: 摄取失败的文件 ID。
+    """
     try:
         async with get_session_factory()() as db:
             file = await knowledge_repo.get_file_by_id(db, file_id)
             if file is not None and file.status == KnowledgeFileStatus.PARSING:
                 file.status = KnowledgeFileStatus.FAILED
+                await knowledge_repo.clear_retrieval_keys(db, file_id=file_id)
                 await db.commit()
     except Exception:
         logger.exception("knowledge_mark_failed_error file_id=%s", file_id)
